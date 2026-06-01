@@ -1,79 +1,85 @@
-import express from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import express, { Express, Request, Response } from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
 import cron from 'node-cron';
-import { getDatabase, closeDatabase } from './db/connection.js';
-import { initializeEmailService } from './email/index.js';
-import { scrapeAllCounties } from './scrapers/index.js';
-import leadsRouter from './routes/leads.js';
-import statsRouter from './routes/stats.js';
-import scrapeRouter from './routes/scrape.js';
-import settingsRouter from './routes/settings.js';
+import { initializeDatabase } from './db/init';
+import { LeadsService } from './db/leads';
+import { ScrapeRunsService } from './db/scrape-runs';
+import { SettingsService } from './db/settings';
+import TaxDelinquentScraper from './scrapers/tax-delinquent-production';
+import leadsRoutes from './routes/leads';
+import statsRoutes from './routes/stats';
+import scrapeRoutes from './routes/scrape';
+import settingsRoutes from './routes/settings';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const app = express();
-const port = parseInt(process.env.PORT || '5000');
+dotenv.config();
+
+const app: Express = express();
+const port = process.env.PORT || 3000;
 
 // Middleware
+app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../dist/client')));
 
 // Initialize services
-console.log('Initializing database...');
-const db = getDatabase();
+let leadsService: LeadsService;
+let scrapeRunsService: ScrapeRunsService;
+let settingsService: SettingsService;
+let taxDelinquentScraper: TaxDelinquentScraper;
 
-console.log('Initializing email service...');
-initializeEmailService();
-
-// API Routes
-app.use('/api/leads', leadsRouter);
-app.use('/api/stats', statsRouter);
-app.use('/api/scrape', scrapeRouter);
-app.use('/api/settings', settingsRouter);
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Serve client
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/client/index.html'));
-});
-
-// Schedule daily scrape at 6 AM EST (11 AM UTC)
-// Cron format: minute hour day month dayOfWeek
-cron.schedule('0 11 * * *', async () => {
-  console.log('\n========================================');
-  console.log('Starting scheduled daily scrape...');
-  console.log('========================================');
+// Initialize database and start server
+async function start() {
   try {
-    const leads = await scrapeAllCounties();
-    console.log(`✓ Scheduled scrape completed: ${leads.length} leads found`);
+    console.log('🚀 Initializing Atlas SC Leads platform...');
+    
+    // Initialize database
+    await initializeDatabase();
+    console.log('✅ Database initialized');
+    
+    // Create service instances
+    leadsService = new LeadsService();
+    scrapeRunsService = new ScrapeRunsService();
+    settingsService = new SettingsService();
+    taxDelinquentScraper = new TaxDelinquentScraper(leadsService, scrapeRunsService);
+    
+    // Register routes
+    app.use('/api/leads', leadsRoutes(leadsService));
+    app.use('/api/stats', statsRoutes(leadsService));
+    app.use('/api/scrape', scrapeRoutes(taxDelinquentScraper, leadsService, scrapeRunsService));
+    app.use('/api/settings', settingsRoutes(settingsService));
+    
+    // Health check endpoint
+    app.get('/health', (req: Request, res: Response) => {
+      res.json({ status: 'ok', timestamp: new Date() });
+    });
+    
+    // Schedule daily tax delinquent scraping at 6 AM EST
+    // Cron format: minute hour day month dayOfWeek
+    cron.schedule('0 6 * * *', async () => {
+      console.log('⏰ Running scheduled tax delinquent scrape...');
+      try {
+        await taxDelinquentScraper.scrapeAllCounties();
+        console.log('✅ Scheduled scrape completed');
+      } catch (error) {
+        console.error('❌ Scheduled scrape failed:', error);
+      }
+    });
+    
+    console.log('✅ Daily scraping scheduled for 6 AM EST');
+    
+    // Start server
+    app.listen(port, () => {
+      console.log(`🌐 Server running on port ${port}`);
+      console.log(`📊 Dashboard: http://localhost:${port}`);
+      console.log(`📡 API: http://localhost:${port}/api`);
+    });
+    
   } catch (error) {
-    console.error('Error in scheduled scrape:', error);
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
   }
-});
+}
 
-// Start server
-app.listen(port, () => {
-  console.log(`\n✓ Atlas SC Leads server running on port ${port}`);
-  console.log(`✓ Database: ${process.env.DATABASE_PATH || './data/leads.db'}`);
-  console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`✓ Client: http://localhost:${port}`);
-  console.log(`✓ API: http://localhost:${port}/api`);
-  console.log('\nDaily scrape scheduled for 6 AM EST (11 AM UTC)');
-});
+start();
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('\nSIGTERM received, shutting down gracefully...');
-  closeDatabase();
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('\nSIGINT received, shutting down gracefully...');
-  closeDatabase();
-  process.exit(0);
-});
+export default app;
