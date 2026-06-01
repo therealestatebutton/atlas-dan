@@ -1,158 +1,113 @@
-import { BarChart3, TrendingUp, Calendar, AlertCircle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { useStats } from '../hooks/useStats';
-import { LoadingSkeleton } from '../components/LoadingSpinner';
-import { ErrorBoundary } from '../components/ErrorBoundary';
-import { Badge } from '../components/Badge';
+import { formatNumber } from '../lib/utils';
 
 export default function Dashboard() {
-  const { stats, loading, error, refetch } = useStats();
+  const { stats, loading, error } = useStats();
+  const [countyStats, setCountyStats] = useState<any[]>([]);
+  const [typeStats, setTypeStats] = useState<any[]>([]);
 
-  if (loading) {
-    return (
-      <div className="p-6">
-        <LoadingSkeleton />
-      </div>
-    );
-  }
+  useEffect(() => {
+    fetchCountyStats();
+    fetchTypeStats();
+  }, []);
 
-  if (error || !stats) {
-    return (
-      <ErrorBoundary error={error} onRetry={refetch} />
-    );
-  }
+  const fetchCountyStats = async () => {
+    try {
+      const res = await fetch('/api/stats/by-county');
+      const data = await res.json();
+      setCountyStats(data);
+    } catch (error) {
+      console.error('Error fetching county stats:', error);
+    }
+  };
 
-  const topLeadTypes = Object.entries(stats.leads_by_type)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5);
+  const fetchTypeStats = async () => {
+    try {
+      const res = await fetch('/api/stats/by-type');
+      const data = await res.json();
+      setTypeStats(data);
+    } catch (error) {
+      console.error('Error fetching type stats:', error);
+    }
+  };
+
+  if (loading) return <div className="p-8">Loading...</div>;
+  if (error) return <div className="p-8 text-red-600">Error: {error}</div>;
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
-        <p className="text-slate-600 mt-1">Overview of your lead aggregation metrics</p>
-      </div>
+    <div className="p-8">
+      <h1 className="text-4xl font-bold mb-8">Atlas Dashboard</h1>
 
       {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard
-          icon={<TrendingUp className="text-blue-600" size={24} />}
-          label="Total Leads"
-          value={stats.total_leads.toLocaleString()}
-          subtext="All time"
-        />
-        <MetricCard
-          icon={<Calendar className="text-green-600" size={24} />}
-          label="New Today"
-          value={stats.new_leads_today.toString()}
-          subtext="Last 24 hours"
-        />
-        <MetricCard
-          icon={<BarChart3 className="text-purple-600" size={24} />}
-          label="Lead Types"
-          value={Object.keys(stats.leads_by_type).length.toString()}
-          subtext="Tracked categories"
-        />
-        <MetricCard
-          icon={<AlertCircle className="text-orange-600" size={24} />}
-          label="Last Scrape"
-          value={stats.last_scrape ? new Date(stats.last_scrape).toLocaleDateString() : 'Never'}
-          subtext="Most recent"
-        />
-      </div>
-
-      {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Lead Types */}
-        <div className="card p-6">
-          <h2 className="text-lg font-semibold mb-4">Top Lead Types</h2>
-          <div className="space-y-4">
-            {topLeadTypes.length > 0 ? (
-              topLeadTypes.map(([type, count]) => (
-                <div key={type} className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-slate-700 capitalize">{type}</span>
-                      <span className="text-sm font-semibold text-slate-900">{count}</span>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2">
-                      <div
-                        className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all"
-                        style={{
-                          width: `${(count / stats.total_leads) * 100}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-slate-500 text-sm">No leads yet</p>
-            )}
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-white p-6 rounded-lg shadow">
+          <div className="text-gray-600 text-sm font-medium">Total Leads</div>
+          <div className="text-3xl font-bold mt-2">{formatNumber(stats?.totalLeads || 0)}</div>
         </div>
-
-        {/* Lead Status Distribution */}
-        <div className="card p-6">
-          <h2 className="text-lg font-semibold mb-4">Lead Status</h2>
-          <div className="space-y-3">
-            {Object.entries(stats.leads_by_status).length > 0 ? (
-              Object.entries(stats.leads_by_status).map(([status, count]) => (
-                <div key={status} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                  <Badge variant="status" value={status} />
-                  <span className="text-sm font-semibold text-slate-900">{count}</span>
-                </div>
-              ))
-            ) : (
-              <p className="text-slate-500 text-sm">No leads yet</p>
-            )}
-          </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <div className="text-gray-600 text-sm font-medium">Active Leads</div>
+          <div className="text-3xl font-bold mt-2 text-green-600">{formatNumber(stats?.activeLeads || 0)}</div>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <div className="text-gray-600 text-sm font-medium">Counties</div>
+          <div className="text-3xl font-bold mt-2">{stats?.countyCount || 0}</div>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <div className="text-gray-600 text-sm font-medium">Lead Types</div>
+          <div className="text-3xl font-bold mt-2">{stats?.typeCount || 0}</div>
         </div>
       </div>
 
       {/* County Breakdown */}
-      <div className="card p-6">
-        <h2 className="text-lg font-semibold mb-4">Leads by County</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {Object.entries(stats.leads_by_county).length > 0 ? (
-            Object.entries(stats.leads_by_county).map(([county, count]) => (
-              <div key={county} className="p-4 bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors">
-                <p className="text-sm text-slate-600 font-medium">{county} County</p>
-                <p className="text-3xl font-bold text-slate-900 mt-2">{count}</p>
-                <p className="text-xs text-slate-500 mt-1">
-                  {((count / stats.total_leads) * 100).toFixed(1)}% of total
-                </p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h2 className="text-xl font-bold mb-4">Leads by County</h2>
+          <div className="space-y-3">
+            {countyStats.map((county: any) => (
+              <div key={county.county} className="flex justify-between items-center">
+                <span className="text-gray-700">{county.county}</span>
+                <div className="flex items-center gap-4">
+                  <div className="w-32 bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full"
+                      style={{ width: `${(county.count / (stats?.totalLeads || 1)) * 100}%` }}
+                    ></div>
+                  </div>
+                  <span className="font-bold w-12 text-right">{formatNumber(county.count)}</span>
+                </div>
               </div>
-            ))
-          ) : (
-            <p className="text-slate-500 text-sm col-span-3">No leads yet</p>
-          )}
+            ))}
+          </div>
+        </div>
+
+        {/* Lead Type Breakdown */}
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h2 className="text-xl font-bold mb-4">Leads by Type</h2>
+          <div className="space-y-3">
+            {typeStats.map((type: any) => (
+              <div key={type.leadType} className="flex justify-between items-center">
+                <span className="text-gray-700 capitalize">{type.leadType.replace('-', ' ')}</span>
+                <div className="flex items-center gap-4">
+                  <div className="w-32 bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-green-600 h-2 rounded-full"
+                      style={{ width: `${(type.count / (stats?.totalLeads || 1)) * 100}%` }}
+                    ></div>
+                  </div>
+                  <span className="font-bold w-12 text-right">{formatNumber(type.count)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  subtext,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  subtext: string;
-}) {
-  return (
-    <div className="card p-6 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <p className="text-sm text-slate-600 font-medium">{label}</p>
-          <p className="text-3xl font-bold text-slate-900 mt-2">{value}</p>
-          <p className="text-xs text-slate-500 mt-2">{subtext}</p>
-        </div>
-        <div className="p-3 bg-slate-50 rounded-lg">{icon}</div>
+      {/* Recent Activity */}
+      <div className="bg-white p-6 rounded-lg shadow">
+        <h2 className="text-xl font-bold mb-4">Recent Scrapes</h2>
+        <p className="text-gray-600">Last updated: {new Date().toLocaleString()}</p>
+        <p className="text-sm text-gray-500 mt-2">Scrapes run daily at 6 AM EST</p>
       </div>
     </div>
   );

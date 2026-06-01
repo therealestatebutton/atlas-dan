@@ -1,121 +1,44 @@
-import express, { Request, Response } from 'express';
-import { scrapeAllCounties } from '../scrapers/index.js';
-import { ScrapeRunsService } from '../db/scrape-runs.js';
+import { Router, Request, Response } from 'express';
+import TaxDelinquentScraper from '../scrapers/tax-delinquent-production';
+import { LeadsService } from '../db/leads';
+import { ScrapeRunsService } from '../db/scrape-runs';
 
-const router = express.Router();
-let currentScrapeId: string | null = null;
+export default function scrapeRoutes(
+  taxDelinquentScraper: TaxDelinquentScraper,
+  leadsService: LeadsService,
+  scrapeRunsService: ScrapeRunsService
+) {
+  const router = Router();
 
-// POST /api/scrape - Trigger manual scrape
-router.post('/', async (req: Request, res: Response) => {
-  try {
-    if (ScrapeRunsService.isRunning()) {
-      return res.status(409).json({ error: 'Scrape already in progress' });
+  // Trigger manual scrape
+  router.post('/trigger', async (req: Request, res: Response) => {
+    try {
+      res.json({ status: 'scraping', message: 'Tax delinquent scrape started' });
+      await taxDelinquentScraper.scrapeAllCounties();
+    } catch (error) {
+      console.error('Scrape error:', error);
     }
+  });
 
-    const scrapeId = Buffer.from(Math.random().toString()).toString('base64').substring(0, 12);
-    currentScrapeId = scrapeId;
-
-    // Create scrape run record
-    ScrapeRunsService.createRun(scrapeId);
-
-    // Run scrape in background
-    (async () => {
-      try {
-        const leads = await scrapeAllCounties();
-        ScrapeRunsService.completeRun(scrapeId, leads.length);
-        console.log(`✓ Scrape ${scrapeId} completed: ${leads.length} leads`);
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        ScrapeRunsService.completeRun(scrapeId, 0, errorMsg);
-        console.error(`✗ Scrape ${scrapeId} failed:`, error);
-      } finally {
-        currentScrapeId = null;
-      }
-    })();
-
-    res.json({ scrape_id: scrapeId, status: 'started' });
-  } catch (error) {
-    currentScrapeId = null;
-    console.error('Error starting scrape:', error);
-    res.status(500).json({ error: 'Failed to start scrape' });
-  }
-});
-
-// GET /api/scrape/status - Check scrape progress
-router.get('/status', (req: Request, res: Response) => {
-  try {
-    const currentRun = ScrapeRunsService.getCurrentRun();
-    const lastRun = ScrapeRunsService.getLatestRun();
-
-    const isRunning = currentRun !== null;
-
-    res.json({
-      status: isRunning ? 'running' : 'idle',
-      current_scrape: isRunning
-        ? {
-            id: currentRun!.id,
-            started_at: currentRun!.started_at,
-          }
-        : null,
-      last_scrape: lastRun
-        ? {
-            id: lastRun.id,
-            started_at: lastRun.started_at,
-            completed_at: lastRun.completed_at,
-            leads_found: lastRun.leads_found,
-            errors: lastRun.errors,
-          }
-        : null,
-    });
-  } catch (error) {
-    console.error('Error checking scrape status:', error);
-    res.status(500).json({ error: 'Failed to check scrape status' });
-  }
-});
-
-// POST /api/scrape/historical - Pull historical data
-router.post('/historical', async (req: Request, res: Response) => {
-  try {
-    const { days = 7 } = req.body;
-
-    if (days < 1 || days > 90) {
-      return res.status(400).json({ error: 'days must be between 1 and 90' });
+  // Get scrape history
+  router.get('/history', async (req: Request, res: Response) => {
+    try {
+      const runs = await scrapeRunsService.getRecentRuns(30);
+      res.json(runs);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch scrape history' });
     }
+  });
 
-    if (ScrapeRunsService.isRunning()) {
-      return res.status(409).json({ error: 'Scrape already in progress' });
+  // Get scrape status
+  router.get('/status', async (req: Request, res: Response) => {
+    try {
+      const latestRun = await scrapeRunsService.getLatestRun();
+      res.json(latestRun);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch scrape status' });
     }
+  });
 
-    const scrapeId = Buffer.from(Math.random().toString()).toString('base64').substring(0, 12);
-    currentScrapeId = scrapeId;
-
-    const now = new Date();
-    const fromDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-
-    // Create scrape run record
-    ScrapeRunsService.createRun(scrapeId);
-
-    // Run scrape in background
-    (async () => {
-      try {
-        const leads = await scrapeAllCounties(fromDate, now);
-        ScrapeRunsService.completeRun(scrapeId, leads.length);
-        console.log(`✓ Historical scrape ${scrapeId} completed: ${leads.length} leads`);
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        ScrapeRunsService.completeRun(scrapeId, 0, errorMsg);
-        console.error(`✗ Historical scrape ${scrapeId} failed:`, error);
-      } finally {
-        currentScrapeId = null;
-      }
-    })();
-
-    res.json({ scrape_id: scrapeId, status: 'started', days });
-  } catch (error) {
-    currentScrapeId = null;
-    console.error('Error starting historical scrape:', error);
-    res.status(500).json({ error: 'Failed to start historical scrape' });
-  }
-});
-
-export default router;
+  return router;
+}
