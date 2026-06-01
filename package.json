@@ -3,14 +3,16 @@
   "version": "1.0.0",
   "description": "Lead aggregation platform for Horry, Georgetown, and Marion counties in South Carolina",
   "type": "module",
-  "main": "server/index.ts",
+  "main": "dist/server/index.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite",
-    "build": "vite build && tsc --noEmit",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "cd client && vite build",
+    "build:server": "tsc --project tsconfig.server.json",
     "preview": "vite preview",
-    "start": "pnpm build && node dist/server/index.js",
+    "start": "npm run build && node dist/server/index.js",
     "db:init": "tsx server/db/init.ts",
     "scrape": "tsx server/scrapers/index.ts"
   },
@@ -25,6 +27,8 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.3.3",
@@ -45,9 +49,11 @@
     "@types/better-sqlite3": "^7.6.8",
     "@types/node": "^20.10.6",
     "@types/nodemailer": "^6.4.14",
-    "@types/node-cron": "^3.0.11"
+    "@types/node-cron": "^3.0.11",
+    "@types/cheerio": "^0.22.31"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   }
 }
