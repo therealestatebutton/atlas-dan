@@ -1,0 +1,8 @@
+[build]
+cmd = "pnpm build"
+
+[start]
+cmd = "node dist/server/index.js"
+
+[variables]
+PORT = "5000"
