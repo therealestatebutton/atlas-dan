@@ -19,7 +19,10 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist/client')));
 
 // Initialize services
+console.log('Initializing database...');
 const db = getDatabase();
+
+console.log('Initializing email service...');
 initializeEmailService();
 
 // API Routes
@@ -38,12 +41,15 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/client/index.html'));
 });
 
-// Schedule daily scrape at 6 AM EST
-cron.schedule('0 6 * * *', async () => {
+// Schedule daily scrape at 6 AM EST (11 AM UTC)
+// Cron format: minute hour day month dayOfWeek
+cron.schedule('0 11 * * *', async () => {
+  console.log('\n========================================');
   console.log('Starting scheduled daily scrape...');
+  console.log('========================================');
   try {
     const leads = await scrapeAllCounties();
-    console.log(`✓ Scrape completed: ${leads.length} leads found`);
+    console.log(`✓ Scheduled scrape completed: ${leads.length} leads found`);
   } catch (error) {
     console.error('Error in scheduled scrape:', error);
   }
@@ -51,20 +57,23 @@ cron.schedule('0 6 * * *', async () => {
 
 // Start server
 app.listen(port, () => {
-  console.log(`✓ Server running on port ${port}`);
+  console.log(`\n✓ Atlas SC Leads server running on port ${port}`);
   console.log(`✓ Database: ${process.env.DATABASE_PATH || './data/leads.db'}`);
   console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`✓ Client: http://localhost:${port}`);
+  console.log(`✓ API: http://localhost:${port}/api`);
+  console.log('\nDaily scrape scheduled for 6 AM EST (11 AM UTC)');
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully...');
+  console.log('\nSIGTERM received, shutting down gracefully...');
   closeDatabase();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully...');
+  console.log('\nSIGINT received, shutting down gracefully...');
   closeDatabase();
   process.exit(0);
 });

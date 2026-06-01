@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { getDatabase } from '../db/connection.js';
+import { SettingsService } from '../db/settings.js';
 import { sendTestEmail } from '../email/index.js';
 
 const router = express.Router();
@@ -7,22 +7,8 @@ const router = express.Router();
 // GET /api/settings - Get current settings (masks secrets)
 router.get('/', (req: Request, res: Response) => {
   try {
-    const db = getDatabase();
-    const stmt = db.prepare('SELECT key, value FROM settings');
-    const rows = stmt.all() as Array<{ key: string; value: string }>;
-
-    const settings: Record<string, any> = {};
-    rows.forEach(row => {
-      settings[row.key] = row.value;
-    });
-
-    // Mask sensitive values
-    const masked = { ...settings };
-    if (masked.smtp_pass) masked.smtp_pass = '***';
-    if (masked.skip_trace_key) masked.skip_trace_key = '***';
-    if (masked.scraper_api_key) masked.scraper_api_key = '***';
-
-    res.json(masked);
+    const settings = SettingsService.getAllMasked();
+    res.json(settings);
   } catch (error) {
     console.error('Error fetching settings:', error);
     res.status(500).json({ error: 'Failed to fetch settings' });
@@ -32,21 +18,16 @@ router.get('/', (req: Request, res: Response) => {
 // POST /api/settings - Save settings
 router.post('/', (req: Request, res: Response) => {
   try {
-    const db = getDatabase();
     const settings = req.body;
 
-    const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
-
-    for (const [key, value] of Object.entries(settings)) {
-      stmt.run(key, String(value));
-    }
+    const updated = SettingsService.setMultiple(settings);
 
     // Update environment variables
     for (const [key, value] of Object.entries(settings)) {
       process.env[key.toUpperCase()] = String(value);
     }
 
-    res.json({ success: true, message: 'Settings saved' });
+    res.json({ success: true, message: `${updated} settings saved` });
   } catch (error) {
     console.error('Error saving settings:', error);
     res.status(500).json({ error: 'Failed to save settings' });
