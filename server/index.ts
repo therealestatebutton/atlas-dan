@@ -245,8 +245,40 @@ async function startServer() {
     if (!settings.skip_trace_key) {
       return res.status(400).json({ success: false, error: "Easy Button Skip Trace API key not configured. Go to Settings to add it." });
     }
-    // Stub — replace with real Easy Button Skip Trace API call once endpoint is provided
-    res.json({ success: false, error: "Skip trace API endpoint not yet configured." });
+    // Easy Button Skip Trace API — POST to their REST endpoint
+    // API docs: https://app.easybuttonskiptrace.com (API Access section in dashboard)
+    const lead = (db as any).prepare("SELECT * FROM leads WHERE id = ?").get(id) as any;
+    if (!lead) return res.status(404).json({ success: false, error: "Lead not found." });
+    try {
+      const r = await fetch("https://api.easybuttonskiptrace.com/v1/trace", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${settings.skip_trace_key}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify({
+          name: lead.owner_name,
+          address: lead.address,
+          city: lead.city,
+          state: lead.state || "SC",
+          zip: lead.zip,
+        }),
+      });
+      if (!r.ok) {
+        const errText = await r.text();
+        return res.status(r.status).json({ success: false, error: `Skip trace API returned ${r.status}: ${errText}` });
+      }
+      const data = await r.json() as any;
+      // Normalize response — Easy Button returns phone/email/mailing_address fields
+      const phone = data.phone || data.phones?.[0] || data.phone_number || null;
+      const email = data.email || data.emails?.[0] || data.email_address || null;
+      const mailing = data.mailing_address || data.mail_address || data.address || null;
+      updateLeadSkipTrace(id, { phone, email, mailing });
+      return res.json({ success: true, phone, email, mailing });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: `Skip trace request failed: ${err.message}` });
+    }
   });
 
   // POST /api/leads/:id/skip-trace-update — update skip trace data

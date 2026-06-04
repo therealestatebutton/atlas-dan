@@ -54,186 +54,45 @@ interface CountyMatrix {
 }
 
 const LEAD_MATRIX: CountyMatrix[] = [
-  // ── MISSOURI ──────────────────────────────────────────────────────────────
+  // ── SOUTH CAROLINA ────────────────────────────────────────────────────────
   {
-    county: "Jackson", state: "MO", region: "Kansas City Metro",
+    county: "Horry", state: "SC", region: "Grand Strand / Myrtle Beach",
     sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "Jackson County Recorder + MO Case.net", endpoint: "recorder.jacksongov.org + courts.mo.gov", notes: "LP documents from recorder; LP court cases from Case.net (court code 16). Enriched via Jackson County ArcGIS parcel layer." },
-      { type: "Tax Delinquent", status: "live", source: "Jackson County ArcGIS Parcels", endpoint: "maps.jacksongov.org/arcgis/rest/services", notes: "FeatureServer query with DELINQUENT='Y' filter. No auth required. Returns owner name, address, parcel ID directly from assessor." },
-      { type: "Sheriff Sales", status: "live", source: "Jackson County Sheriff Civil Process", endpoint: "jacksongov.org/civil-process", notes: "HTML scrape of civil process page. Enriched with owner name via assessor parcel lookup." },
-      { type: "Code Violations", status: "live", source: "KC 311 Open Data", endpoint: "data.kcmo.org/resource/d4px-6rwg.json", notes: "Socrata API, no auth. Filter: issue_type='Property Violations'. Enriched via assessor ArcGIS." },
-      { type: "Fire Damage", status: "live", source: "KC 311 Open Data", endpoint: "data.kcmo.org/resource/d4px-6rwg.json", notes: "Same dataset. Filter: issue_type='Dangerous Buildings' OR 'Open Burning/Fire'. 94 records in last 90 days." },
-      { type: "Water Shutoff", status: "live", source: "KC 311 Open Data", endpoint: "data.kcmo.org/resource/d4px-6rwg.json", notes: "Same dataset. Filter: issue_type='Water Service' AND issue_sub_type='No Water'. 234 records in last 90 days." },
-      { type: "Vacant / Abandoned", status: "live", source: "KC 311 Open Data", endpoint: "data.kcmo.org/resource/d4px-6rwg.json", notes: "Same dataset. Filter: issue_sub_type LIKE '%Vacant%'. 36 records in last 90 days." },
-      { type: "Bankruptcy", status: "live", source: "PACER Western District MO RSS", endpoint: "ecf.mowb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Public RSS feed, no auth. Covers all MO Western District counties. Enriched: only saved when filer owns property in county." },
-      { type: "Probate / Estate", status: "live", source: "MO Case.net", endpoint: "courts.mo.gov/casenet/cases/searchCases.do", notes: "Case type PR, court code 16. Enriched via Jackson County assessor ArcGIS — only saved when decedent owns property." },
-      { type: "Divorce", status: "live", source: "MO Case.net", endpoint: "courts.mo.gov/casenet/cases/searchCases.do", notes: "Case type D, court code 16. Only saved when respondent owns property in Jackson County." },
-      { type: "Obituaries", status: "live", source: "Legacy.com KC RSS", endpoint: "legacy.com/obituaries/kansascity/rss.aspx", notes: "Estate lead proxy. Enriched via assessor — only saved when decedent owns property in county." },
-      { type: "FSBO", status: "live", source: "Craigslist Kansas City", endpoint: "kansascity.craigslist.org/search/reo", notes: "JSON API, no auth. Filtered by FSBO/motivated seller keywords." },
+      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "AcclaimWeb ROD (Horry County)", endpoint: "acclaimweb.horrycounty.org/AcclaimWeb — doc type 132/210", notes: "AcclaimWeb document search for LIS PENDENS DEED and LIS PENDENS MTG. Session-based API, returns JSON. Enriched via Horry County assessor." },
+      { type: "Foreclosure Notice", status: "live", source: "AcclaimWeb ROD (Horry County)", endpoint: "acclaimweb.horrycounty.org/AcclaimWeb — doc type 137", notes: "NOTICE OF FORECLOSURE documents from Horry County Register of Deeds. Same AcclaimWeb session flow." },
+      { type: "Tax Delinquent", status: "live", source: "Horry County Treasurer", endpoint: "horrycountysc.gov/Departments/Treasurer/Delinquent-Taxes", notes: "HTML scrape of delinquent tax page. Extracts parcel, owner, address, and delinquent amount from table rows. PDF/CSV links also captured." },
+      { type: "Probate / Estate", status: "live", source: "SC Public Index (Horry)", endpoint: "publicindex.sccourts.org/Horry/PublicIndex/PISearch.aspx — caseType=ESTATE", notes: "SC Courts public index. POST search for ESTATE case type. Returns case number, caption, filing date. Enriched via Horry assessor." },
+      { type: "Sheriff Sales", status: "live", source: "Horry County Sheriff", endpoint: "horrycountysc.gov/sheriff — civil process", notes: "HTML scrape of civil process / sheriff sale listings. Extracts property address, case number, sale date." },
+      { type: "Bankruptcy", status: "live", source: "PACER District of SC RSS", endpoint: "ecf.scb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Public RSS feed, no auth. SC District bankruptcy filings. Enriched via Horry assessor — only saved when filer owns property in county." },
+      { type: "Obituaries", status: "live", source: "Legacy.com Myrtle Beach RSS", endpoint: "legacy.com/obituaries/myrtlebeachonline/rss.aspx", notes: "Estate lead proxy. Enriched via assessor — only saved when decedent owns property in Horry County." },
+      { type: "FSBO", status: "live", source: "Craigslist SC", endpoint: "southcarolina.craigslist.org/search/reo", notes: "JSON API, no auth. Filtered by FSBO/motivated seller keywords. Covers Grand Strand area." },
+      { type: "Code Violations", status: "live", source: "SC Courts / Horry County", endpoint: "publicindex.sccourts.org/Horry — code enforcement", notes: "Code enforcement cases from SC Public Index. Enriched via assessor for owner name and address." },
+      { type: "Divorce", status: "live", source: "SC Public Index (Horry)", endpoint: "publicindex.sccourts.org/Horry/PublicIndex/PISearch.aspx — caseType=DIVORCE", notes: "Divorce filings from SC Courts. Enriched via assessor — only saved when respondent owns property in Horry County." },
+      { type: "Vacant / Abandoned", status: "live", source: "SC PACER Civil RSS", endpoint: "ecf.scb.uscourts.gov/cgi-bin/rss_outside.pl — civil filter", notes: "Vacant/abandoned property indicators from civil court filings. Cross-referenced with assessor." },
     ]
   },
   {
-    county: "Clay", state: "MO", region: "Kansas City Metro (North)",
+    county: "Georgetown", state: "SC", region: "Waccamaw Neck / Pawleys Island",
     sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "MO Case.net", endpoint: "courts.mo.gov/casenet — court code 12", notes: "LP cases for Clay County. Enriched via Clay County assessor." },
-      { type: "Tax Delinquent", status: "possible", source: "Clay County Collector", endpoint: "claycountymo.gov/collector", notes: "HTML scrape. Works but may need periodic updates if site structure changes. Ask Manus to verify if 0 results appear." },
-      { type: "Sheriff Sales", status: "possible", source: "Clay County Sheriff", endpoint: "claycountysheriff.net/civil-process", notes: "HTML scrape. Verify URL is current before each deployment." },
-      { type: "Code Violations", status: "live", source: "KC 311 Open Data", endpoint: "data.kcmo.org/resource/d4px-6rwg.json", notes: "Liberty/Kearney/Gladstone addresses auto-assigned to Clay County by ZIP code." },
-      { type: "Fire Damage", status: "live", source: "KC 311 Open Data", endpoint: "data.kcmo.org/resource/d4px-6rwg.json", notes: "Same KC 311 feed — Clay County addresses included." },
-      { type: "Water Shutoff", status: "live", source: "KC 311 Open Data", endpoint: "data.kcmo.org/resource/d4px-6rwg.json", notes: "Same KC 311 feed — Clay County addresses included." },
-      { type: "Bankruptcy", status: "live", source: "PACER Western District MO RSS", endpoint: "ecf.mowb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Same feed as Jackson — covers all MO Western District." },
-      { type: "Probate / Estate", status: "live", source: "MO Case.net", endpoint: "courts.mo.gov/casenet — court code 12", notes: "Case type PR. Enriched via Clay County assessor." },
-      { type: "Divorce", status: "live", source: "MO Case.net", endpoint: "courts.mo.gov/casenet — court code 12", notes: "Case type D. Only saved when respondent owns property." },
-      { type: "Obituaries", status: "live", source: "Legacy.com KC RSS", endpoint: "legacy.com/obituaries/kansascity/rss.aspx", notes: "Same KC metro feed — covers Clay County area." },
-      { type: "FSBO", status: "live", source: "Craigslist Kansas City", endpoint: "kansascity.craigslist.org/search/reo", notes: "Same feed as Jackson." },
+      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "SC Public Index (Georgetown)", endpoint: "publicindex.sccourts.org/Georgetown/PublicIndex/PISearch.aspx — caseType=FORECLOSURE", notes: "SC Courts public index POST search. Returns case number, caption, filing date. Enriched via Georgetown County assessor (qPublic portal)." },
+      { type: "Tax Delinquent", status: "live", source: "Georgetown County Treasurer", endpoint: "gtcountysc.gov/departments/treasurer", notes: "HTML scrape of Georgetown County treasurer delinquent tax page. Extracts parcel, owner, address, and delinquent amount." },
+      { type: "Probate / Estate", status: "live", source: "SC Public Index (Georgetown)", endpoint: "publicindex.sccourts.org/Georgetown/PublicIndex/PISearch.aspx — caseType=ESTATE", notes: "Estate case filings from SC Courts. Enriched via Georgetown assessor — only saved when decedent owns property." },
+      { type: "Bankruptcy", status: "live", source: "PACER District of SC RSS", endpoint: "ecf.scb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Same SC District feed as Horry. Enriched via Georgetown assessor." },
+      { type: "Obituaries", status: "live", source: "Legacy.com Georgetown SC RSS", endpoint: "legacy.com/obituaries/georgetownsc/rss.aspx", notes: "Estate proxy. Enriched via assessor — only saved when decedent owns property in Georgetown County." },
+      { type: "FSBO", status: "live", source: "Craigslist SC", endpoint: "southcarolina.craigslist.org/search/reo", notes: "Same SC Craigslist feed. Filtered by Georgetown/Pawleys Island area keywords." },
+      { type: "Divorce", status: "possible", source: "SC Public Index (Georgetown)", endpoint: "publicindex.sccourts.org/Georgetown — caseType=DIVORCE", notes: "Divorce filings from SC Courts. Enriched via assessor. May need session refresh if portal changes." },
     ]
   },
   {
-    county: "Cass", state: "MO", region: "Kansas City Metro (South)",
+    county: "Marion", state: "SC", region: "Pee Dee Region",
     sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "MO Case.net", endpoint: "courts.mo.gov/casenet — court code 7", notes: "LP cases for Cass County. Enriched via Cass County assessor." },
-      { type: "Tax Delinquent", status: "live", source: "Cass County Collector ArcGIS", endpoint: "casscounty.com/collector + ArcGIS fallback", notes: "Confirmed working HTML scrape with ArcGIS fallback. Harrisonville area." },
-      { type: "Sheriff Sales", status: "live", source: "Cass County Sheriff", endpoint: "casscountysheriff.net/civil-process", notes: "HTML scrape of civil process page." },
-      { type: "Code Violations", status: "na", source: "No open data portal", endpoint: "—", notes: "Cass County does not have a public code violation API. Would require direct court/county portal scraping." },
-      { type: "Bankruptcy", status: "live", source: "PACER Western District MO RSS", endpoint: "ecf.mowb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Same feed as Jackson." },
-      { type: "Probate / Estate", status: "live", source: "MO Case.net", endpoint: "courts.mo.gov/casenet — court code 7", notes: "Case type PR. Enriched via Cass County assessor." },
-      { type: "Divorce", status: "live", source: "MO Case.net", endpoint: "courts.mo.gov/casenet — court code 7", notes: "Case type D. Only saved when respondent owns property." },
-      { type: "Obituaries", status: "live", source: "Legacy.com KC RSS", endpoint: "legacy.com/obituaries/kansascity/rss.aspx", notes: "KC metro feed covers Cass County area." },
-      { type: "FSBO", status: "live", source: "Craigslist Kansas City", endpoint: "kansascity.craigslist.org/search/reo", notes: "Same feed as Jackson." },
-    ]
-  },
-  {
-    county: "Platte", state: "MO", region: "Kansas City Metro (NW)",
-    sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "MO Case.net", endpoint: "courts.mo.gov/casenet — court code 25", notes: "LP cases for Platte County. Enriched via Platte County assessor." },
-      { type: "Tax Delinquent", status: "possible", source: "Platte County Collector", endpoint: "plattecountymo.gov/collector", notes: "HTML scrape. Verify URL is current — ask Manus to check if 0 results appear." },
-      { type: "Sheriff Sales", status: "live", source: "Platte County Sheriff", endpoint: "plattecountysheriff.org/civil-process", notes: "Civil process page scrape." },
-      { type: "Code Violations", status: "na", source: "No open data portal", endpoint: "—", notes: "No public code violation API for Platte County." },
-      { type: "Bankruptcy", status: "live", source: "PACER Western District MO RSS", endpoint: "ecf.mowb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Same feed as Jackson." },
-      { type: "Probate / Estate", status: "live", source: "MO Case.net", endpoint: "courts.mo.gov/casenet — court code 25", notes: "Case type PR. Enriched via Platte County assessor." },
-      { type: "Divorce", status: "live", source: "MO Case.net", endpoint: "courts.mo.gov/casenet — court code 25", notes: "Case type D. Only saved when respondent owns property." },
-      { type: "Obituaries", status: "live", source: "Legacy.com KC RSS", endpoint: "legacy.com/obituaries/kansascity/rss.aspx", notes: "KC metro feed covers Platte County area." },
-      { type: "FSBO", status: "live", source: "Craigslist Kansas City", endpoint: "kansascity.craigslist.org/search/reo", notes: "Same feed as Jackson." },
-    ]
-  },
-  // ── OHIO ──────────────────────────────────────────────────────────────────
-  {
-    county: "Hamilton", state: "OH", region: "Cincinnati Metro",
-    sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "Hamilton County Clerk of Courts", endpoint: "courtclerk.org/records-search/case-search/?caseType=F", notes: "HTML scrape of foreclosure case search. Enriched via Hamilton County Auditor ArcGIS." },
-      { type: "Tax Delinquent", status: "live", source: "Hamilton County Auditor", endpoint: "wedge1.hcauditor.org/search/re/delinquent/{year}/1", notes: "CONFIRMED WORKING. Returns owner name, address, city, zip, delinquent amount. Prior year fallback included." },
-      { type: "Sheriff Sales", status: "live", source: "Hamilton County RealAuction", endpoint: "hamilton.sheriffsaleauction.ohio.gov", notes: "JS-rendered page — uses fetchRendered. Enriched with owner via auditor." },
-      { type: "Code Violations", status: "live", source: "Cincinnati Open Data", endpoint: "data.cincinnati-oh.gov/resource/cncm-znd6.json", notes: "Socrata API, no auth. 500 records in last 90 days. Fields: entered_date, full_address, case_number, violation_description." },
-      { type: "Fire Damage", status: "stale", source: "Cincinnati Fire CAD", endpoint: "data.cincinnati-oh.gov/resource/vnsz-a3wp.json", notes: "DATASET STALE: Cincinnati's open data portal last updated this dataset Sept 2023. Scraper is correctly coded (cfd_incident_type_group='STRUCTURE FIRE', address_x). Will pull automatically if Cincinnati resumes updates." },
-      { type: "Vacant / Abandoned", status: "live", source: "Cincinnati Vacant Foreclosed Registry", endpoint: "data.cincinnati-oh.gov/resource/w3jp-dfxy.json", notes: "84 records in last 90 days. No street address in dataset — scraper uses Nominatim reverse geocoding from lat/lon. Enriched via Hamilton County Auditor." },
-      { type: "Bankruptcy", status: "live", source: "PACER Southern + Northern District OH", endpoint: "ecf.ohsb.uscourts.gov + ecf.ohnb.uscourts.gov", notes: "Two RSS feeds — Southern (Cincinnati/Columbus/Dayton) and Northern (Cleveland/Akron). Enriched: only saved when filer owns property." },
-      { type: "Probate / Estate", status: "live", source: "Hamilton County Probate Court", endpoint: "probatect.org/case-search?caseType=estate", notes: "HTML scrape. Enriched via auditor — only saved when decedent owns property." },
-      { type: "Divorce", status: "live", source: "Hamilton County Clerk of Courts", endpoint: "courtclerk.org/records-search/case-search/?caseType=DR", notes: "POST search. Only saved when respondent owns property in Hamilton County." },
-      { type: "Obituaries", status: "live", source: "Legacy.com Cincinnati RSS", endpoint: "legacy.com/obituaries/cincinnati/rss.aspx", notes: "Estate lead proxy. Enriched via auditor — only saved when decedent owns property." },
-      { type: "FSBO", status: "live", source: "Craigslist Cincinnati", endpoint: "cincinnati.craigslist.org/search/reo", notes: "JSON API, filtered by FSBO/motivated seller keywords." },
-    ]
-  },
-  // ── ALABAMA ───────────────────────────────────────────────────────────────
-  {
-    county: "Jefferson", state: "AL", region: "Birmingham Metro",
-    sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "AlaCourt Public Case Search", endpoint: "v2.alacourt.com — caseType=CV", notes: "AlaCourt public portal, foreclosure filter. Enriched via JCCAL ArcGIS." },
-      { type: "Tax Delinquent", status: "needs_brightdata", source: "JCCAL ArcGIS (behind Imperva WAF)", endpoint: "gis.jccal.org/arcgis/rest/services", notes: "JCCAL ArcGIS is behind Imperva WAF — blocks all datacenter IPs. Bright Data residential proxy ($15–50/mo) is the only reliable bypass. Falls back to limited public endpoint without it." },
-      { type: "Sheriff Sales", status: "live", source: "Rubin Lublin + jeffcosheriff.net", endpoint: "rubinlublin.com/sheriff-sales/alabama", notes: "Rubin Lublin covers all AL counties. County page as fallback. Enriched via JCCAL." },
-      { type: "Code Violations", status: "live", source: "Jefferson County Code Enforcement", endpoint: "jeffcointouch.com/code-enforcement", notes: "Jefferson County portal scrape. Enriched with owner via JCCAL." },
-      { type: "Vacant / Abandoned", status: "live", source: "Birmingham Open Data", endpoint: "data.birminghamal.gov — vacant/blight registry", notes: "City of Birmingham blight registry. Enriched via JCCAL assessor." },
-      { type: "Bankruptcy", status: "live", source: "PACER Northern District AL RSS", endpoint: "ecf.alnb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Covers Jefferson/Madison/Morgan/Shelby. Enriched: only saved when filer owns property." },
-      { type: "Probate / Estate", status: "live", source: "AlaCourt caseType=PR + JCCAL enrichment", endpoint: "v2.alacourt.com — caseType=PR", notes: "AlaCourt public search. Enriched via JCCAL ArcGIS." },
-      { type: "Divorce", status: "live", source: "AlaCourt caseType=DR", endpoint: "v2.alacourt.com — caseType=DR", notes: "Only saved when respondent owns property in Jefferson County." },
-      { type: "Obituaries", status: "live", source: "al.com obituaries + Legacy.com", endpoint: "al.com/obituaries + legacy.com/obituaries/birmingham", notes: "Estate lead proxy. Enriched via JCCAL assessor lookup." },
-      { type: "FSBO", status: "live", source: "Craigslist Birmingham", endpoint: "birmingham.craigslist.org/search/reo", notes: "JSON API, filtered by FSBO/motivated seller keywords." },
-    ]
-  },
-  {
-    county: "Madison", state: "AL", region: "Huntsville Metro",
-    sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "AlaCourt Public Case Search", endpoint: "v2.alacourt.com — caseType=CV", notes: "Same feed as Jefferson. Enriched via Madison County assessor." },
-      { type: "Tax Delinquent", status: "live", source: "Madison County Property Tax Portal", endpoint: "madisonproperty.countygovservices.com", notes: "Accessible without proxy — POST search confirmed working. No WAF." },
-      { type: "Sheriff Sales", status: "live", source: "Rubin Lublin + madisoncountyal.gov", endpoint: "rubinlublin.com/sheriff-sales/alabama", notes: "Rubin Lublin primary, county page fallback." },
-      { type: "Code Violations", status: "live", source: "Huntsville Open Data", endpoint: "data.huntsvilleal.gov", notes: "City of Huntsville open data portal. Enriched via Madison County assessor." },
-      { type: "Vacant / Abandoned", status: "possible", source: "Huntsville Code Enforcement", endpoint: "huntsvilleal.gov/code-enforcement", notes: "HTML scrape possible. Ask Manus to verify current URL structure." },
-      { type: "Bankruptcy", status: "live", source: "PACER Northern District AL RSS", endpoint: "ecf.alnb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Same feed as Jefferson." },
-      { type: "Probate / Estate", status: "live", source: "AlaCourt caseType=PR", endpoint: "v2.alacourt.com — caseType=PR", notes: "AlaCourt public search. Enriched via Madison County assessor." },
-      { type: "Divorce", status: "live", source: "AlaCourt caseType=DR", endpoint: "v2.alacourt.com — caseType=DR", notes: "Only saved when respondent owns property." },
-      { type: "Obituaries", status: "live", source: "al.com + Legacy.com Huntsville", endpoint: "legacy.com/obituaries/huntsvilletimes", notes: "Estate lead proxy. Enriched via Madison County assessor." },
-      { type: "FSBO", status: "live", source: "Craigslist Huntsville", endpoint: "huntsville.craigslist.org/search/reo", notes: "JSON API, filtered by FSBO/motivated seller keywords." },
-    ]
-  },
-  {
-    county: "Morgan", state: "AL", region: "Decatur Area",
-    sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "AlaCourt Public Case Search", endpoint: "v2.alacourt.com — caseType=CV", notes: "Same feed as Jefferson/Madison." },
-      { type: "Tax Delinquent", status: "needs_attom", source: "AL Revenue GIS (blocked)", endpoint: "gis.revenue.alabama.gov", notes: "gis.revenue.alabama.gov blocks all datacenter IPs. ATTOM Data API (~$150/mo) unlocks full address + owner enrichment for this county." },
-      { type: "Sheriff Sales", status: "live", source: "Rubin Lublin", endpoint: "rubinlublin.com/sheriff-sales/alabama", notes: "Statewide coverage." },
-      { type: "Bankruptcy", status: "live", source: "PACER Northern District AL RSS", endpoint: "ecf.alnb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Same feed as Jefferson." },
-      { type: "Probate / Estate", status: "live", source: "AlaCourt caseType=PR", endpoint: "v2.alacourt.com — caseType=PR", notes: "AlaCourt public search." },
-      { type: "Divorce", status: "live", source: "AlaCourt caseType=DR", endpoint: "v2.alacourt.com — caseType=DR", notes: "Only saved when respondent owns property." },
-      { type: "FSBO", status: "live", source: "Craigslist Huntsville", endpoint: "huntsville.craigslist.org/search/reo", notes: "Same feed as Madison." },
-    ]
-  },
-  {
-    county: "Montgomery", state: "AL", region: "Montgomery Metro",
-    sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "AlaCourt Public Case Search", endpoint: "v2.alacourt.com — caseType=CV", notes: "AlaCourt public search. Enriched via Montgomery County assessor." },
-      { type: "Tax Delinquent", status: "needs_attom", source: "AL Revenue GIS (blocked)", endpoint: "gis.revenue.alabama.gov", notes: "Blocked by gis.revenue.alabama.gov. ATTOM Data API (~$150/mo) required." },
-      { type: "Sheriff Sales", status: "live", source: "Rubin Lublin", endpoint: "rubinlublin.com/sheriff-sales/alabama", notes: "Statewide coverage." },
-      { type: "Bankruptcy", status: "live", source: "PACER Middle District AL RSS", endpoint: "ecf.almb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Middle District covers Montgomery/Autauga/Elmore." },
-      { type: "Probate / Estate", status: "live", source: "AlaCourt caseType=PR", endpoint: "v2.alacourt.com — caseType=PR", notes: "AlaCourt public search." },
-      { type: "Divorce", status: "live", source: "AlaCourt caseType=DR", endpoint: "v2.alacourt.com — caseType=DR", notes: "Only saved when respondent owns property." },
-      { type: "FSBO", status: "live", source: "Craigslist Montgomery", endpoint: "montgomery.craigslist.org/search/reo", notes: "JSON API, filtered by FSBO/motivated seller keywords." },
-    ]
-  },
-  {
-    county: "Shelby", state: "AL", region: "Birmingham Suburbs",
-    sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "AlaCourt Public Case Search", endpoint: "v2.alacourt.com — caseType=CV", notes: "AlaCourt public search. Enriched via Shelby County assessor." },
-      { type: "Tax Delinquent", status: "needs_attom", source: "AL Revenue GIS (blocked)", endpoint: "gis.revenue.alabama.gov", notes: "Blocked by gis.revenue.alabama.gov. ATTOM Data API (~$150/mo) required." },
-      { type: "Sheriff Sales", status: "live", source: "Rubin Lublin", endpoint: "rubinlublin.com/sheriff-sales/alabama", notes: "Statewide coverage." },
-      { type: "Bankruptcy", status: "live", source: "PACER Northern District AL RSS", endpoint: "ecf.alnb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Same feed as Jefferson." },
-      { type: "Probate / Estate", status: "live", source: "AlaCourt caseType=PR", endpoint: "v2.alacourt.com — caseType=PR", notes: "AlaCourt public search." },
-      { type: "Divorce", status: "live", source: "AlaCourt caseType=DR", endpoint: "v2.alacourt.com — caseType=DR", notes: "Only saved when respondent owns property." },
-      { type: "FSBO", status: "live", source: "Craigslist Birmingham", endpoint: "birmingham.craigslist.org/search/reo", notes: "Same feed as Jefferson." },
-    ]
-  },
-  {
-    county: "Limestone", state: "AL", region: "Athens / North Alabama",
-    sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "AlaCourt Public Case Search", endpoint: "v2.alacourt.com — caseType=CV", notes: "AlaCourt public search. Enriched via Limestone County assessor." },
-      { type: "Tax Delinquent", status: "needs_attom", source: "AL Revenue GIS (blocked)", endpoint: "gis.revenue.alabama.gov", notes: "Blocked by gis.revenue.alabama.gov. ATTOM Data API (~$150/mo) required." },
-      { type: "Sheriff Sales", status: "live", source: "Rubin Lublin", endpoint: "rubinlublin.com/sheriff-sales/alabama", notes: "Statewide coverage." },
-      { type: "Bankruptcy", status: "live", source: "PACER Northern District AL RSS", endpoint: "ecf.alnb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Same feed as Jefferson." },
-      { type: "Probate / Estate", status: "live", source: "AlaCourt caseType=PR", endpoint: "v2.alacourt.com — caseType=PR", notes: "AlaCourt public search." },
-      { type: "Divorce", status: "live", source: "AlaCourt caseType=DR", endpoint: "v2.alacourt.com — caseType=DR", notes: "Only saved when respondent owns property." },
-      { type: "FSBO", status: "live", source: "Craigslist Huntsville", endpoint: "huntsville.craigslist.org/search/reo", notes: "Same feed as Madison." },
-    ]
-  },
-  {
-    county: "Autauga", state: "AL", region: "Montgomery Area",
-    sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "AlaCourt Public Case Search", endpoint: "v2.alacourt.com — caseType=CV", notes: "AlaCourt public search." },
-      { type: "Tax Delinquent", status: "needs_attom", source: "AL Revenue GIS (blocked)", endpoint: "gis.revenue.alabama.gov", notes: "Blocked by gis.revenue.alabama.gov. ATTOM Data API (~$150/mo) required." },
-      { type: "Sheriff Sales", status: "live", source: "Rubin Lublin", endpoint: "rubinlublin.com/sheriff-sales/alabama", notes: "Statewide coverage." },
-      { type: "Bankruptcy", status: "live", source: "PACER Middle District AL RSS", endpoint: "ecf.almb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Middle District covers Autauga/Elmore/Montgomery." },
-      { type: "Probate / Estate", status: "live", source: "AlaCourt caseType=PR", endpoint: "v2.alacourt.com — caseType=PR", notes: "AlaCourt public search." },
-      { type: "Divorce", status: "live", source: "AlaCourt caseType=DR", endpoint: "v2.alacourt.com — caseType=DR", notes: "Only saved when respondent owns property." },
-      { type: "FSBO", status: "live", source: "Craigslist Montgomery", endpoint: "montgomery.craigslist.org/search/reo", notes: "Same feed as Montgomery." },
-    ]
-  },
-  {
-    county: "Elmore", state: "AL", region: "Montgomery Area",
-    sources: [
-      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "AlaCourt Public Case Search", endpoint: "v2.alacourt.com — caseType=CV", notes: "AlaCourt public search." },
-      { type: "Tax Delinquent", status: "needs_attom", source: "AL Revenue GIS (blocked)", endpoint: "gis.revenue.alabama.gov", notes: "Blocked by gis.revenue.alabama.gov. ATTOM Data API (~$150/mo) required." },
-      { type: "Sheriff Sales", status: "live", source: "Rubin Lublin", endpoint: "rubinlublin.com/sheriff-sales/alabama", notes: "Statewide coverage." },
-      { type: "Bankruptcy", status: "live", source: "PACER Middle District AL RSS", endpoint: "ecf.almb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Middle District covers Autauga/Elmore/Montgomery." },
-      { type: "Probate / Estate", status: "live", source: "AlaCourt caseType=PR", endpoint: "v2.alacourt.com — caseType=PR", notes: "AlaCourt public search." },
-      { type: "Divorce", status: "live", source: "AlaCourt caseType=DR", endpoint: "v2.alacourt.com — caseType=DR", notes: "Only saved when respondent owns property." },
-      { type: "FSBO", status: "live", source: "Craigslist Montgomery", endpoint: "montgomery.craigslist.org/search/reo", notes: "Same feed as Montgomery." },
+      { type: "Pre-Foreclosure / Lis Pendens", status: "live", source: "SC Public Index (Marion)", endpoint: "publicindex.sccourts.org/Marion/PublicIndex/PISearch.aspx — caseType=FORECLOSURE", notes: "SC Courts public index POST search. Returns case number, caption, filing date. Enriched via Marion County assessor (eSearch portal)." },
+      { type: "Probate / Estate", status: "live", source: "SC Public Index (Marion)", endpoint: "publicindex.sccourts.org/Marion/PublicIndex/PISearch.aspx — caseType=ESTATE", notes: "Estate case filings from SC Courts. Enriched via Marion assessor — only saved when decedent owns property." },
+      { type: "Tax Delinquent", status: "possible", source: "Marion County Treasurer", endpoint: "marioncountysc.gov/treasurer", notes: "HTML scrape of Marion County treasurer portal. May require periodic URL verification. Ask Manus to check if 0 results appear." },
+      { type: "Bankruptcy", status: "live", source: "PACER District of SC RSS", endpoint: "ecf.scb.uscourts.gov/cgi-bin/rss_outside.pl", notes: "Same SC District feed. Enriched via Marion assessor." },
+      { type: "Obituaries", status: "live", source: "Legacy.com Marion SC RSS", endpoint: "legacy.com/obituaries/florencesc/rss.aspx", notes: "Florence/Marion metro feed. Enriched via assessor — only saved when decedent owns property in Marion County." },
+      { type: "FSBO", status: "live", source: "Craigslist SC", endpoint: "southcarolina.craigslist.org/search/reo", notes: "Same SC Craigslist feed. Filtered by Marion/Pee Dee area keywords." },
+      { type: "Divorce", status: "possible", source: "SC Public Index (Marion)", endpoint: "publicindex.sccourts.org/Marion — caseType=DIVORCE", notes: "Divorce filings from SC Courts. Enriched via assessor. Verify portal is current." },
     ]
   },
 ];
@@ -432,9 +291,7 @@ export default function Settings() {
   const totalCounties = LEAD_MATRIX.length;
 
   const stateGroups = [
-    { label: "Missouri", counties: LEAD_MATRIX.filter(c => c.state === "MO") },
-    { label: "Ohio", counties: LEAD_MATRIX.filter(c => c.state === "OH") },
-    { label: "Alabama", counties: LEAD_MATRIX.filter(c => c.state === "AL") },
+    { label: "South Carolina", counties: LEAD_MATRIX.filter(c => c.state === "SC") },
   ];
 
   return (
@@ -472,7 +329,7 @@ export default function Settings() {
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
             <p className="font-semibold text-white text-base mb-2">What Atlas Is</p>
             <p className="text-slate-300 text-sm leading-relaxed">
-              Atlas is a fully automated real estate lead generation system that runs on your own server 24/7. Every morning at 6:00 AM Eastern Time, it scrapes motivated seller leads from county court systems, open data portals, PACER bankruptcy feeds, Craigslist, and assessor databases across Missouri, Ohio, and Alabama. It enriches each lead with the property owner's name and address, deduplicates, stores everything in a permanent database, and emails you a fresh CSV. You own the code, the server, and the data — it runs forever with no monthly platform fees.
+              Atlas is a fully automated real estate lead generation system that runs on your own server 24/7. Every morning at 6:00 AM Eastern Time, it scrapes motivated seller leads from county court systems, SC Courts public index, PACER bankruptcy feeds, AcclaimWeb ROD, Craigslist, and assessor databases across South Carolina (Horry, Georgetown, and Marion counties). It enriches each lead with the property owner's name and address, deduplicates, stores everything in a permanent database, and emails you a fresh CSV. You own the code, the server, and the data — it runs forever with no monthly platform fees.
             </p>
           </div>
 
@@ -480,7 +337,7 @@ export default function Settings() {
           <SubSection title="Daily Automated Flow" icon={<Cpu className="w-4 h-4" />}>
             <div className="space-y-3">
               {[
-                { n: 1, label: "Scrape (6:00 AM EST)", body: "The node-cron scheduler triggers runAllScrapers() in server/scrapers/index.ts. It loops through every configured county and calls the appropriate state scraper (scrapeOhio, scrapeMissouri, scrapeAlabama). Each scraper hits the county's public data source — court portals, open data APIs, PACER RSS feeds, Craigslist — and returns an array of raw Lead objects." },
+                { n: 1, label: "Scrape (6:00 AM EST)", body: "The node-cron scheduler triggers runAllScrapers() in server/scrapers/index.ts. It loops through every configured county and calls the appropriate state scraper (scrapeSC). Each scraper hits the county's public data source — SC Courts public index, AcclaimWeb ROD, county treasurer portals, PACER RSS feeds, Craigslist — and returns an array of raw Lead objects." },
                 { n: 2, label: "Enrich", body: "Each lead is cross-referenced with the county assessor's ArcGIS or property portal to get the owner's full legal name and mailing address. Name-based leads (probate, divorce, obituaries, bankruptcy) are only saved if the person actually owns property in that county — this filters out non-property-owners automatically." },
                 { n: 3, label: "Deduplicate & Store", body: "Every lead gets a stable ID generated from county + lead type + case/parcel number (makeId() in base.ts). The upsertLead() function in db.ts uses SQLite's INSERT OR IGNORE to skip duplicates silently. Leads without a usable address or owner name are also filtered out. The database is permanent — it persists across deployments and Railway restarts." },
                 { n: 4, label: "Email Delivery", body: "After scraping, Atlas emails a CSV of all new leads from that day's run to your configured recipients. Configure SMTP credentials in the Email Delivery section below. Gmail works with an App Password; any SMTP provider works." },
@@ -499,11 +356,11 @@ export default function Settings() {
                 {[
                   { icon: "🖥️", label: "Server Runtime", value: "Node.js + Express on Railway (your account). Handles API routes, the daily cron, and serves the React frontend as static files." },
                   { icon: "🗄️", label: "Database", value: "SQLite via node-sqlite3-wasm. Stored on Railway's persistent volume — survives deployments and restarts. All leads are permanent." },
-                  { icon: "🔍", label: "Scrapers", value: "server/scrapers/ — one file per state: missouri.ts, ohio.ts, alabama.ts. Each exports scrapeXxx(county, fromDate, toDate) functions." },
+                  { icon: "🔍", label: "Scrapers", value: "server/scrapers/ — one file per state: south_carolina.ts. Exports scrapeSC(county, fromDate, toDate) for Horry, Georgetown, and Marion counties." },
                   { icon: "🏠", label: "Assessor Enrichment", value: "server/scrapers/assessor.ts — lookupByAddress() and lookupOwnerProperties() for all counties. Queries county ArcGIS FeatureServers and auditor portals." },
                   { icon: "⏰", label: "Cron Scheduler", value: "node-cron in server/index.ts — cron expression '0 11 * * *' with timezone America/New_York = 6:00 AM EST. Restart-safe." },
                   { icon: "🎨", label: "Frontend", value: "React 19 + Tailwind 4 + shadcn/ui in client/src/. Served by Express as static files. Routes: / (login), /leads (dashboard), /settings, /property-condition." },
-                  { icon: "📦", label: "GitHub Repo", value: "dealsnh/atlas-national-houses — Railway auto-deploys on every push to main branch. Deploy takes 3–4 minutes." },
+                  { icon: "📦", label: "GitHub Repo", value: "therealestatebutton/atlas-dan — Railway auto-deploys on every push to main branch. Deploy takes 3–4 minutes." },
                   { icon: "🔑", label: "Settings Storage", value: "API keys and SMTP credentials are stored in the SQLite DB via the settings table. They persist across deployments." },
                 ].map(item => (
                   <div key={item.label} className="flex gap-2 bg-slate-900/40 rounded-lg p-2.5">
@@ -522,9 +379,7 @@ export default function Settings() {
   db.ts                 ← SQLite schema, upsertLead(), getStats(), settings
   scrapers/
     index.ts            ← runAllScrapers() dispatcher — routes to state scrapers
-    missouri.ts         ← MO scrapers: Jackson/Clay/Cass/Platte
-    ohio.ts             ← OH scrapers: Hamilton County (Cincinnati)
-    alabama.ts          ← AL scrapers: Jefferson/Madison/Morgan/Montgomery/Shelby/Limestone/Autauga/Elmore
+    south_carolina.ts   ← SC scrapers: Horry/Georgetown/Marion
     assessor.ts         ← lookupByAddress() + lookupOwnerProperties() for all counties
     base.ts             ← Lead interface, makeId(), formatDate(), fetchWithRetry()
 client/src/
@@ -586,7 +441,7 @@ client/src/
                 {
                   type: "Sheriff Sales",
                   how: "Scrapes county sheriff civil process pages or RealAuction portals. Extracts property address, case number, and sale date. Enriched via assessor for owner name.",
-                  example: "Hamilton OH: hamilton.sheriffsaleauction.ohio.gov (JS-rendered, uses fetchRendered)"
+                  example: "Horry SC: acclaimweb.horrycounty.org/AcclaimWeb (session-based JSON API, doc types 132/137/210)"
                 },
               ].map(item => (
                 <div key={item.type} className="bg-slate-900/40 rounded-lg p-3 border border-slate-700/30">
@@ -617,14 +472,9 @@ client/src/
               <div className="bg-slate-900/40 rounded-lg p-3 border border-slate-700/30">
                 <p className="font-semibold text-white mb-1">Assessor Endpoints by County</p>
                 <div className="space-y-1 font-mono text-xs text-slate-500">
-                  <p>Jackson MO: maps.jacksongov.org/arcgis/rest/services/Parcels/FeatureServer/0</p>
-                  <p>Clay MO: gis.claycountymo.gov/arcgis/rest/services/Parcels/FeatureServer/0</p>
-                  <p>Cass MO: gis.casscounty.com/arcgis/rest/services/Parcels/FeatureServer/0</p>
-                  <p>Platte MO: gis.plattecountymo.gov/arcgis/rest/services/Parcels/FeatureServer/0</p>
-                  <p>Hamilton OH: wedge1.hcauditor.org (property search) + ArcGIS parcel layer</p>
-                  <p>Jefferson AL: gis.jccal.org/arcgis/rest/services (behind WAF — needs Bright Data)</p>
-                  <p>Madison AL: gis.madisoncountyal.gov/arcgis/rest/services/Parcels/FeatureServer/0</p>
-                  <p>AL (others): gis.revenue.alabama.gov (blocked — needs ATTOM)</p>
+                  <p>Horry SC: acclaimweb.horrycounty.org (AcclaimWeb ROD) + Horry County assessor portal</p>
+                  <p>Georgetown SC: qPublic portal (gtcountysc.gov) + SC Courts public index</p>
+                  <p>Marion SC: marioncountysc.gov assessor eSearch portal + SC Courts public index</p>
                 </div>
               </div>
             </div>
@@ -653,12 +503,12 @@ client/src/
                 </Step>
                 <Step n="3" label="Start Every Manus Session With This Prompt">
                   <p className="text-slate-400 mb-1.5">Open a new Manus task and paste this at the start (fill in your values):</p>
-                  <CodeBlock>{`I have an Atlas lead scraper running on Railway (project: atlas-national-houses).
-The code is at github.com/dealsnh/atlas-national-houses.
-My GitHub token is [ghp_...] (repo scope on dealsnh account).
+                  <CodeBlock>{`I have an Atlas lead scraper running on Railway (project: atlas-dan).
+The code is at github.com/therealestatebutton/atlas-dan.
+My GitHub token is [ghp_...] (repo scope on therealestatebutton account).
 My Railway token is [your Railway token].
-The live URL is https://web-production-aa586.up.railway.app
-Login: tina@nationalhouses.com / Tina1074$
+The live URL is https://[your-railway-url].up.railway.app
+Login: dan@therealestatebutton.com / Dan1074$
 
 I need you to: [describe what you want]`}</CodeBlock>
                 </Step>
@@ -678,9 +528,9 @@ I need you to: [describe what you want]`}</CodeBlock>
           <SubSection title="What to Ask Manus" icon={<Terminal className="w-4 h-4" />}>
             <div className="grid md:grid-cols-2 gap-2 text-xs">
               {[
-                { label: "Add a new county", prompt: '"Add Cuyahoga County Ohio to my Atlas. Use the Cuyahoga County Auditor ArcGIS for enrichment and the Cleveland Municipal Court for pre-foreclosure."' },
-                { label: "Add a new lead type", prompt: '"Add divorce filings from AlaCourt for Jefferson County AL. Only save leads where the respondent owns property in Jefferson County."' },
-                { label: "Fix a broken scraper", prompt: '"The Jackson County sheriff sales scraper is returning 0 leads. Check the live endpoint at jacksongov.org/civil-process and fix the field names."' },
+                { label: "Add a new county", prompt: '"Add Beaufort County South Carolina to my Atlas. Use the Beaufort County assessor for enrichment and SC Public Index for pre-foreclosure and probate."' },
+                { label: "Add a new lead type", prompt: '"Add divorce filings from SC Public Index for Georgetown County SC. Only save leads where the respondent owns property in Georgetown County."' },
+                { label: "Fix a broken scraper", prompt: '"The Horry County tax delinquent scraper is returning 0 leads. Check the live endpoint at horrycountysc.gov/Departments/Treasurer/Delinquent-Taxes and fix the field names."' },
                 { label: "Change delivery time", prompt: '"Change my daily CSV email from 6 AM to 7 AM Eastern Time."' },
                 { label: "Add CRM integration", prompt: '"After each daily scrape, push all new leads to my RESimpli account via their API. My RESimpli API key is [key]."' },
                 { label: "Custom filtering", prompt: '"Only save tax delinquent leads where the assessed value is under $200,000."' },
@@ -728,11 +578,11 @@ I need you to: [describe what you want]`}</CodeBlock>
                 },
                 {
                   name: "Bright Data (~$15–50/mo)", color: "text-purple-300",
-                  desc: "Required for Jefferson County AL tax delinquent. The JCCAL ArcGIS endpoint is behind Imperva WAF — Bright Data residential proxies are the only reliable bypass. Enter credentials in API Keys below. Without it, Jefferson County tax delinquent falls back to a limited public endpoint."
+                  desc: "Optional proxy for SC county portals that may block Railway's datacenter IP. SC Courts public index and AcclaimWeb ROD are generally accessible without proxies, but Bright Data can be used as a fallback if any portal starts blocking. Enter credentials in API Keys below."
                 },
                 {
                   name: "ATTOM Data (~$150/mo)", color: "text-orange-300",
-                  desc: "Unlocks tax delinquent for Morgan, Montgomery, Shelby, Limestone, Autauga, and Elmore AL — counties where gis.revenue.alabama.gov blocks all IPs. Without ATTOM, these counties still get pre-foreclosure, bankruptcy, probate, divorce, and sheriff sales but no tax delinquent data."
+                  desc: "Optional enrichment for property details not available via county assessor portals. Useful if you expand to counties where the assessor portal is blocked or returns incomplete data (~$150/mo)."
                 },
                 {
                   name: "ScraperAPI (~$29/mo)", color: "text-slate-300",
@@ -788,13 +638,13 @@ I need you to: [describe what you want]`}</CodeBlock>
             {!settings.attom_configured && (
               <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg px-4 py-3 text-xs text-orange-300 flex items-start gap-2">
                 <Key className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                <span><strong>ATTOM not configured:</strong> Morgan, Montgomery, Shelby, Limestone, Autauga, and Elmore AL tax delinquent are blocked by gis.revenue.alabama.gov. Add an ATTOM API key below to unlock these counties (~$150/mo).</span>
+                <span><strong>ATTOM not configured:</strong> ATTOM Data is optional for SC counties — all three counties have working public assessor portals. Add an ATTOM API key below if you expand to counties with blocked assessor endpoints.</span>
               </div>
             )}
             {staleCnt > 0 && (
               <div className="bg-slate-700/30 border border-slate-600/30 rounded-lg px-4 py-3 text-xs text-slate-300 flex items-start gap-2">
                 <Clock className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                <span><strong>Note:</strong> Cincinnati Fire CAD dataset (vnsz-a3wp) has not been updated since September 2023. The scraper is correctly coded and will pull automatically if Cincinnati resumes updates to this dataset.</span>
+                <span><strong>Note:</strong> SC Public Index sessions occasionally require a fresh POST to re-authenticate. If any SC Courts scraper returns 0 results, tell Manus: "SC Public Index for [county] returned 0 — check the session cookie and POST parameters."</span>
               </div>
             )}
           </div>
