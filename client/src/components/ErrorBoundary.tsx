@@ -1,33 +1,62 @@
-import { ReactNode } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { cn } from "@/lib/utils";
+import { AlertTriangle, RotateCcw } from "lucide-react";
+import { Component, ReactNode } from "react";
 
-interface ErrorBoundaryProps {
+interface Props {
   children: ReactNode;
-  error?: string | null;
-  onRetry?: () => void;
 }
 
-export function ErrorBoundary({ children, error, onRetry }: ErrorBoundaryProps) {
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="card p-6 border-red-200 bg-red-50">
-          <div className="flex items-start gap-4">
-            <AlertCircle className="text-red-600 flex-shrink-0 mt-1" size={24} />
-            <div className="flex-1">
-              <h3 className="font-semibold text-red-900 mb-1">Error</h3>
-              <p className="text-red-700 text-sm mb-4">{error}</p>
-              {onRetry && (
-                <button onClick={onRetry} className="btn btn-secondary text-sm">
-                  Try Again
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+interface State {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false, error: null };
   }
 
-  return <>{children}</>;
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center min-h-screen p-8 bg-background">
+          <div className="flex flex-col items-center w-full max-w-2xl p-8">
+            <AlertTriangle
+              size={48}
+              className="text-destructive mb-6 flex-shrink-0"
+            />
+
+            <h2 className="text-xl mb-4">An unexpected error occurred.</h2>
+
+            <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
+              <pre className="text-sm text-muted-foreground whitespace-break-spaces">
+                {this.state.error?.stack}
+              </pre>
+            </div>
+
+            <button
+              onClick={() => window.location.reload()}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg",
+                "bg-primary text-primary-foreground",
+                "hover:opacity-90 cursor-pointer"
+              )}
+            >
+              <RotateCcw size={16} />
+              Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
+
+export default ErrorBoundary;

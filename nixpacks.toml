@@ -1,20 +1,15 @@
-[build]
-# Build command
-cmd = "npm run build"
-
-# Cache directories
-cacheDirectories = ["node_modules", "dist"]
-
+[phases.setup]
+nixPkgs = ["nodejs_20", "python3", "gcc", "gnumake"]
+[phases.install]
+cmds = [
+  "npm install -g pnpm@9 --prefix /usr/local",
+  "export PATH=/usr/local/bin:$PATH && rm -rf node_modules && pnpm install --no-frozen-lockfile --prod=false",
+  "export PATH=/usr/local/bin:$PATH && pnpm rebuild better-sqlite3"
+]
+[phases.build]
+cmds = [
+  "export PATH=/usr/local/bin:$PATH && pnpm run build"
+]
 [start]
-# Start command
-cmd = "npm start"
-
-[variables]
-# Server configuration
-PORT = "5000"
-NODE_ENV = "production"
-DATABASE_PATH = "/data/leads.db"
-
-# Client configuration
-CLIENT_NAME = "Atlas SC Leads"
-CLIENT_COUNTIES = "[{\"name\":\"Horry\",\"state\":\"SC\"},{\"name\":\"Georgetown\",\"state\":\"SC\"},{\"name\":\"Marion\",\"state\":\"SC\"}]"
+cmd = "node dist/index.js"
+# cache-bust: v10-rm-node-modules

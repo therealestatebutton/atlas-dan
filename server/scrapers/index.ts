@@ -1,153 +1,85 @@
-import { Lead } from '../types/index.js';
-import { LeadsService } from '../db/leads.js';
-import { ScrapeRunsService } from '../db/scrape-runs.js';
-import { sendDailyReport } from '../email/index.js';
+import { Lead, CountyConfig } from "./base.js";
+import * as southCarolina from "./south_carolina.js";
 
-// Import scrapers
-import {
-  HorryCountyLisPendensScraper,
-  HorryCountyTaxDelinquentScraper,
-  HorryCountyCodeViolationScraper,
-  GeorgetownCountyLisPendensScraper,
-  GeorgetownCountyTaxDelinquentScraper,
-  GeorgetownCountyCodeViolationScraper,
-  MarionCountyLisPendensScraper,
-  MarionCountyTaxDelinquentScraper,
-  MarionCountyCodeViolationScraper,
-  SCCraigslistFBSOScraper,
-  SCObituary Scraper,
-  SCFireDamageScraper,
-  SCWaterShutoffScraper,
-  SCEvictionScraper,
-  SCVacantAbandonedScraper,
-} from './sc-counties.js';
-import { CraigslistFSBOScraper } from './craigslist-fsbo.js';
-
-const COUNTIES = [
-  { name: 'Horry', state: 'SC' },
-  { name: 'Georgetown', state: 'SC' },
-  { name: 'Marion', state: 'SC' },
-];
-
-/**
- * Scrape all lead types for all counties
- */
-export async function scrapeAllCounties(fromDate?: Date, toDate?: Date): Promise<Lead[]> {
+// Run all scrapers for the configured counties
+export async function runAllScrapers(
+  counties: CountyConfig[],
+  fromDate: string,
+  toDate: string,
+  onProgress?: (msg: string) => void
+): Promise<{ leads: Lead[]; errors: string[] }> {
   const allLeads: Lead[] = [];
   const errors: string[] = [];
-  const scrapeId = Buffer.from(Math.random().toString()).toString('base64').substring(0, 12);
 
-  // Create scrape run record
-  ScrapeRunsService.createRun(scrapeId);
+  // Group counties by state
+  const stateGroups = new Map<string, CountyConfig[]>();
+  for (const county of counties) {
+    const key = county.state;
+    if (!stateGroups.has(key)) stateGroups.set(key, []);
+    stateGroups.get(key)!.push(county);
+  }
 
-  try {
-    for (const county of COUNTIES) {
+  for (const [state, stateCounties] of Array.from(stateGroups)) {
+    // County-by-county scrapers for SC
+    for (const county of stateCounties) {
       try {
-        console.log(`\n========================================`);
-        console.log(`Scraping ${county.name} County, ${county.state}`);
-        console.log(`========================================`);
-
-        const countyLeads = await scrapeCounty(county.name, county.state, fromDate, toDate);
-        console.log(`✓ Found ${countyLeads.length} leads for ${county.name} County`);
-
-        // Insert leads into database
-        const inserted = LeadsService.insertLeads(countyLeads);
-        console.log(`✓ Inserted ${inserted} new leads into database`);
-
-        allLeads.push(...countyLeads);
-
-        // Send daily report email if new leads found
-        if (countyLeads.length > 0 && !fromDate) {
-          try {
-            await sendDailyReport(countyLeads, county.name);
-          } catch (emailError) {
-            console.warn('Failed to send daily report:', emailError);
-          }
+        const countyName = county.name || (county as any).county || "";
+        onProgress?.(`Scraping ${countyName}, ${county.state}...`);
+        let leads: Lead[] = [];
+        if (state === "SC") {
+          leads = await southCarolina.scrapeSC(countyName, fromDate, toDate);
+        } else {
+          const msg = `No scraper registered for ${countyName}, ${county.state}`;
+          errors.push(msg);
+          onProgress?.(`✗ ${msg}`);
+          continue;
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        errors.push(`${county.name} County: ${message}`);
-        console.error(`✗ Error scraping ${county.name} County:`, message);
+        allLeads.push(...leads);
+        onProgress?.(`✓ ${countyName} ${county.state}: ${leads.length} leads`);
+      } catch (e) {
+        const countyName = county.name || (county as any).county || "";
+        const msg = `Error scraping ${countyName} ${county.state}: ${(e as Error).message}`;
+        errors.push(msg);
+        onProgress?.(`✗ ${msg}`);
       }
     }
-  } finally {
-    // Complete scrape run record
-    const errorMsg = errors.length > 0 ? errors.join('; ') : undefined;
-    ScrapeRunsService.completeRun(scrapeId, allLeads.length, errorMsg);
 
-    if (errors.length > 0) {
-      console.error('\n✗ Scraping completed with errors:');
-      errors.forEach(e => console.error(`  - ${e}`));
-    } else {
-      console.log('\n✓ Scraping completed successfully');
+    // State-wide scrapers for SC (run once per state, after county loop)
+    if (state === "SC") {
+      const stateWideFns: Array<[string, () => Promise<Lead[]>]> = [
+        ["SC Bankruptcy", () => southCarolina.scrapeBankruptcy(fromDate, toDate)],
+        ["SC Obituaries", () => southCarolina.scrapeObituaries(fromDate, toDate)],
+        ["SC FSBO", () => southCarolina.scrapeFSBO(fromDate, toDate)],
+        ["SC Code Violations", () => southCarolina.scrapeCodeViolations(fromDate, toDate)],
+        ["SC Divorce/Eviction", () => southCarolina.scrapeDivorce(fromDate, toDate)],
+        ["SC Vacant/Abandoned", () => southCarolina.scrapeVacantAbandoned(fromDate, toDate)],
+      ];
+      for (const [label, fn] of stateWideFns) {
+        try {
+          onProgress?.(`Scraping ${label}...`);
+          const leads = await fn();
+          allLeads.push(...leads);
+          onProgress?.(`✓ ${label}: ${leads.length} leads`);
+        } catch (e) {
+          const msg = `Error scraping ${label}: ${(e as Error).message}`;
+          errors.push(msg);
+          onProgress?.(`✗ ${msg}`);
+        }
+      }
     }
   }
 
-  return allLeads;
+  return { leads: allLeads, errors };
 }
 
-/**
- * Scrape a specific county
- */
-export async function scrapeCounty(
-  county: string,
-  state: string,
-  fromDate?: Date,
-  toDate?: Date
-): Promise<Lead[]> {
-  const allLeads: Lead[] = [];
-
-  // Define scrapers for each lead type
-  const scrapers = [
-    // County-specific scrapers
-    new HorryCountyLisPendensScraper({ county, state, fromDate, toDate }),
-    new HorryCountyTaxDelinquentScraper({ county, state, fromDate, toDate }),
-    new HorryCountyCodeViolationScraper({ county, state, fromDate, toDate }),
-    new GeorgetownCountyLisPendensScraper({ county, state, fromDate, toDate }),
-    new GeorgetownCountyTaxDelinquentScraper({ county, state, fromDate, toDate }),
-    new GeorgetownCountyCodeViolationScraper({ county, state, fromDate, toDate }),
-    new MarionCountyLisPendensScraper({ county, state, fromDate, toDate }),
-    new MarionCountyTaxDelinquentScraper({ county, state, fromDate, toDate }),
-    new MarionCountyCodeViolationScraper({ county, state, fromDate, toDate }),
-
-    // Generic scrapers
-    new CraigslistFSBOScraper({ county, state, fromDate, toDate }),
-  ];
-
-  for (const scraper of scrapers) {
-    try {
-      const leads = await scraper.scrape();
-      allLeads.push(...leads);
-    } catch (error) {
-      console.error(`Error with scraper:`, error);
-    }
-  }
-
-  return allLeads;
+export function getDefaultDateRange(): { fromDate: string; toDate: string } {
+  const toDate = new Date().toISOString().split("T")[0];
+  const fromDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  return { fromDate, toDate };
 }
 
-/**
- * Scrape a specific lead type for all counties
- */
-export async function scrapeLeadType(
-  leadType: string,
-  fromDate?: Date,
-  toDate?: Date
-): Promise<Lead[]> {
-  const allLeads: Lead[] = [];
-
-  for (const county of COUNTIES) {
-    try {
-      console.log(`Scraping ${leadType} for ${county.name} County...`);
-
-      // TODO: Implement lead type specific scraping
-      // This would route to the appropriate scraper based on leadType
-
-      console.log(`✓ Completed ${leadType} for ${county.name} County`);
-    } catch (error) {
-      console.error(`Error scraping ${leadType} for ${county.name}:`, error);
-    }
-  }
-
-  return allLeads;
+export function getDateRange(daysBack: number): { fromDate: string; toDate: string } {
+  const toDate = new Date().toISOString().split("T")[0];
+  const fromDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  return { fromDate, toDate };
 }
