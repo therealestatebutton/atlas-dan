@@ -20,11 +20,16 @@ const STATE = "SC";
 
 const ACCLAIM_BASE = "https://acclaimweb.horrycounty.org/AcclaimWeb";
 
-// AcclaimWeb document type IDs confirmed working
+// AcclaimWeb document type IDs — confirmed via live browser test on acclaimweb.horrycounty.org
+// Format: label is the display name, id is the Value field in the Kendo dropdown
 const ACCLAIM_DOC_TYPES = {
-  LIS_PENDENS_DEED: { id: 132, label: "LIS PENDENS DEED (135)" },
-  LIS_PENDENS_MTG:  { id: 210, label: "LIS PENDENS MTG (138)" },
+  LIS_PENDENS_DEED:      { id: 132, label: "LIS PENDENS DEED (135)" },
+  LIS_PENDENS_MTG:       { id: 210, label: "LIS PENDENS MTG (138)" },
   NOTICE_OF_FORECLOSURE: { id: 137, label: "NOTICE OF FORECLOSURE (143)" },
+  PROBATE_FIDUCIARY:     { id: 135, label: "PROBATE FIDUCIARY LETTER (133)" },
+  TAX_LIEN_STATE:        { id: 99,  label: "TAX LIENS - STATE (084)" },
+  TAX_LIEN_FEDERAL:      { id: 101, label: "TAX LIENS - FEDERAL (093)" },
+  COURT_ORDER_DEED:      { id: 133, label: "COURT ORDER DEED (125)" },
 };
 
 async function acclaimWebSearch(
@@ -32,34 +37,39 @@ async function acclaimWebSearch(
   docTypeLabel: string,
   acclaimFrom: string, // MM/DD/YYYY
   acclaimTo: string    // MM/DD/YYYY
-): Promise<any[]> {
+): Promise<Record<string, string>[]> {
+  const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
   try {
-    // Step 1: Get session cookie from disclaimer page
+    // Step 1: GET disclaimer page to obtain ASP.NET session cookie
+    // AcclaimWeb redirects to disclaimer before allowing searches
     const initRes = await fetchWithRetry(
-      `${ACCLAIM_BASE}/search/Disclaimer?st=/AcclaimWeb/search/SearchTypeDocType`
+      `${ACCLAIM_BASE}/Search/Disclaimer?st=/AcclaimWeb/search/SearchTypeDocType`,
+      { headers: { "User-Agent": UA }, redirect: "follow" }
     );
     if (!initRes.ok) return [];
 
-    const setCookie = initRes.headers.get("set-cookie") || "";
-    const sessionMatch = setCookie.match(/ASP\.NET_SessionId=([^;]+)/i);
+    // Extract session cookie from response headers
+    const rawCookies = initRes.headers.get("set-cookie") || "";
+    const sessionMatch = rawCookies.match(/ASP\.NET_SessionId=([^;,\s]+)/i);
     const sessionId = sessionMatch ? sessionMatch[1] : "";
-    if (!sessionId) return [];
+    const cookieHeader = sessionId ? `ASP.NET_SessionId=${sessionId}` : "";
 
-    const cookieHeader = `ASP.NET_SessionId=${sessionId}`;
-
-    // Step 2: Accept disclaimer (POST)
-    await fetchWithRetry(`${ACCLAIM_BASE}/search/Disclaimer`, {
+    // Step 2: POST to accept disclaimer (sets session state to "accepted")
+    await fetchWithRetry(`${ACCLAIM_BASE}/Search/Disclaimer`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        Cookie: cookieHeader,
-        Referer: `${ACCLAIM_BASE}/search/Disclaimer`,
+        "User-Agent": UA,
+        Referer: `${ACCLAIM_BASE}/Search/Disclaimer?st=/AcclaimWeb/search/SearchTypeDocType`,
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
       },
       body: "btnButton=I+accept+the+conditions+above.",
-      redirect: "manual",
+      redirect: "follow",
     });
 
-    // Step 3: Submit document type search (stores criteria in session)
+    // Step 3: POST search criteria — field names confirmed via browser XHR intercept:
+    //   DocTypes=<id>&DocTypesDisplay_input=<label>&DocTypesDisplay=<id>&DateRangeList= &RecordDateFrom=M/D/YYYY&RecordDateTo=M/D/YYYY
+    // NOTE: ?Length=6 is required in the URL (matches the form action observed in browser)
     const searchBody = new URLSearchParams({
       DocTypes: String(docTypeId),
       DocTypesDisplay_input: docTypeLabel,
@@ -68,36 +78,56 @@ async function acclaimWebSearch(
       RecordDateFrom: acclaimFrom,
       RecordDateTo: acclaimTo,
     });
-
     const searchRes = await fetchWithRetry(
-      `${ACCLAIM_BASE}/search/SearchTypeDocType`,
+      `${ACCLAIM_BASE}/search/SearchTypeDocType?Length=6`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: cookieHeader,
+          "User-Agent": UA,
+          "X-Requested-With": "XMLHttpRequest",
           Referer: `${ACCLAIM_BASE}/search/SearchTypeDocType`,
+          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
         },
         body: searchBody.toString(),
       }
     );
     if (!searchRes.ok) return [];
 
-    // Step 4: Fetch grid results via AJAX (session holds search criteria)
-    const gridRes = await fetchWithRetry(`${ACCLAIM_BASE}/Search/GridResults`, {
-      method: "POST",
+    // Step 4: Export CSV — confirmed working via live browser test
+    //   GridResults returns 404; ExportCsv is the correct data endpoint
+    //   CSV columns: Consideration,DirectName,IndirectName,BookPage,RecordDate,DocTypeDescription,BookType,Comments,DeletedAfterVerify
+    const csvRes = await fetchWithRetry(`${ACCLAIM_BASE}/Search/ExportCsv`, {
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Cookie: cookieHeader,
+        "User-Agent": UA,
         "X-Requested-With": "XMLHttpRequest",
         Referer: `${ACCLAIM_BASE}/search/SearchTypeDocType`,
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
       },
-      body: "sort=&page=1&pageSize=500&group=&filter=",
     });
-    if (!gridRes.ok) return [];
+    if (!csvRes.ok) return [];
 
-    const json = await gridRes.json();
-    return json?.Data || [];
+    const csvText = await csvRes.text();
+    const lines = csvText.trim().split("\n");
+    if (lines.length < 2) return [];
+
+    // Parse CSV header row
+    const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, "").trim());
+
+    // Parse data rows (handle quoted fields with embedded commas)
+    return lines.slice(1).map(line => {
+      const cols: string[] = [];
+      let cur = "", inQ = false;
+      for (const ch of line) {
+        if (ch === '"') { inQ = !inQ; }
+        else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ""; }
+        else { cur += ch; }
+      }
+      cols.push(cur.trim());
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => { row[h] = cols[i] || ""; });
+      return row;
+    });
   } catch (e) {
     console.error("[AcclaimWeb] Error:", e);
     return [];
@@ -132,13 +162,16 @@ async function scrapeHorryPreForeclosure(fromDate: string, toDate: string): Prom
   ]);
 
   for (const rec of [...lisDeed, ...lisMtg]) {
-    const name = rec.DirectName || rec.IndirectName || null;
+    // CSV columns: Consideration, DirectName, IndirectName, BookPage, RecordDate, DocTypeDescription, BookType, Comments
+    const name = (rec.DirectName || rec.IndirectName || "").trim() || null;
     const caseMatch = (rec.Comments || "").match(/(?:case|c\/a\s*no\.?|no\.?)\s*([\w\d\s\-]+)/i);
     const caseNumber = caseMatch ? caseMatch[1].trim() : (rec.BookPage || null);
-    const recordDate = acclaimDateToIso(rec.RecordDate);
+    // RecordDate format from CSV: "M/D/YYYY H:MM:SS AM/PM"
+    const recordDate = rec.RecordDate ? formatDate(new Date(rec.RecordDate).toISOString().slice(0, 10)) : null;
+    const consideration = rec.Consideration ? parseFloat(rec.Consideration) : null;
 
     leads.push({
-      id: makeId(COUNTY, STATE, "Pre-Foreclosure", String(rec.TransactionItemId || name || "")),
+      id: makeId(COUNTY, STATE, "Pre-Foreclosure", rec.BookPage || name || String(Date.now())),
       county: COUNTY,
       state: STATE,
       lead_type: "Pre-Foreclosure",
@@ -155,12 +188,12 @@ async function scrapeHorryPreForeclosure(fromDate: string, toDate: string): Prom
       assessed_value: null,
       tax_year: null,
       lender: null,
-      loan_amount: rec.Consideration ? String(Math.round(rec.Consideration)) : null,
+      loan_amount: consideration && consideration > 0 ? String(Math.round(consideration)) : null,
       sale_date: null,
       sale_amount: null,
       description: rec.Comments || rec.DocTypeDescription || "Lis Pendens",
-      source_url: `${ACCLAIM_BASE}/Document/GetDocumentForView?transactionItemId=${rec.TransactionItemId}`,
-      raw_data: JSON.stringify({ bookPage: rec.BookPage, docType: rec.DocTypeDescription }),
+      source_url: `${ACCLAIM_BASE}/search/SearchTypeDocType`,
+      raw_data: JSON.stringify({ bookPage: rec.BookPage, docType: rec.DocTypeDescription, comments: rec.Comments }),
     });
   }
 
@@ -182,11 +215,13 @@ async function scrapeHorryForeclosure(fromDate: string, toDate: string): Promise
   );
 
   for (const rec of records) {
-    const name = rec.DirectName || rec.IndirectName || null;
-    const recordDate = acclaimDateToIso(rec.RecordDate);
+    // CSV columns: Consideration, DirectName, IndirectName, BookPage, RecordDate, DocTypeDescription, BookType, Comments
+    const name = (rec.DirectName || rec.IndirectName || "").trim() || null;
+    const recordDate = rec.RecordDate ? formatDate(new Date(rec.RecordDate).toISOString().slice(0, 10)) : null;
+    const consideration = rec.Consideration ? parseFloat(rec.Consideration) : null;
 
     leads.push({
-      id: makeId(COUNTY, STATE, "Foreclosure", String(rec.TransactionItemId || name || "")),
+      id: makeId(COUNTY, STATE, "Foreclosure", rec.BookPage || name || String(Date.now())),
       county: COUNTY,
       state: STATE,
       lead_type: "Foreclosure",
@@ -203,12 +238,12 @@ async function scrapeHorryForeclosure(fromDate: string, toDate: string): Promise
       assessed_value: null,
       tax_year: null,
       lender: null,
-      loan_amount: rec.Consideration ? String(Math.round(rec.Consideration)) : null,
+      loan_amount: consideration && consideration > 0 ? String(Math.round(consideration)) : null,
       sale_date: null,
       sale_amount: null,
       description: rec.Comments || "Notice of Foreclosure",
-      source_url: `${ACCLAIM_BASE}/Document/GetDocumentForView?transactionItemId=${rec.TransactionItemId}`,
-      raw_data: JSON.stringify({ bookPage: rec.BookPage }),
+      source_url: `${ACCLAIM_BASE}/search/SearchTypeDocType`,
+      raw_data: JSON.stringify({ bookPage: rec.BookPage, docType: rec.DocTypeDescription, comments: rec.Comments }),
     });
   }
 
@@ -218,154 +253,141 @@ async function scrapeHorryForeclosure(fromDate: string, toDate: string): Promise
 async function scrapeHorryTaxDelinquent(fromDate: string, toDate: string): Promise<Lead[]> {
   const leads: Lead[] = [];
   const COUNTY = "Horry";
-  try {
-    const url = "https://www.horrycountysc.gov/Departments/Treasurer/Delinquent-Taxes";
-    const res = await fetchWithRetry(url);
-    if (!res.ok) return leads;
 
-    const html = await res.text();
-    const $ = cheerio.load(html);
+  // Primary source: AcclaimWeb ROD — State Tax Liens (id=99) and Federal Tax Liens (id=101)
+  // These are recorded when a tax lien is filed against a property owner
+  const acclaimFrom = toAcclaimDate(fromDate);
+  const acclaimTo = toAcclaimDate(toDate);
 
-    $("a").each((_, el) => {
-      const href = $(el).attr("href") || "";
-      const text = $(el).text().trim();
-      if (href.match(/\.(pdf|xlsx?|csv)/i) && text.toLowerCase().match(/tax|delinquent|sale/)) {
-        leads.push({
-          id: makeId(COUNTY, STATE, "Tax Delinquent", href),
-          county: COUNTY,
-          state: STATE,
-          lead_type: "Tax Delinquent",
-          owner_name: null,
-          address: null,
-          city: "Myrtle Beach",
-          zip: null,
-          mailing_address: null,
-          mailing_city: null,
-          mailing_state: null,
-          mailing_zip: null,
-          case_number: null,
-          filing_date: formatDate(fromDate),
-          assessed_value: null,
-          tax_year: new Date().getFullYear().toString(),
-          lender: null,
-          loan_amount: null,
-          sale_date: null,
-          sale_amount: null,
-          description: `Horry County Tax Delinquent — ${text}`,
-          source_url: href.startsWith("http") ? href : `https://www.horrycountysc.gov${href}`,
-          raw_data: null,
-        });
-      }
+  const [stateLiens, federalLiens] = await Promise.all([
+    acclaimWebSearch(ACCLAIM_DOC_TYPES.TAX_LIEN_STATE.id, ACCLAIM_DOC_TYPES.TAX_LIEN_STATE.label, acclaimFrom, acclaimTo),
+    acclaimWebSearch(ACCLAIM_DOC_TYPES.TAX_LIEN_FEDERAL.id, ACCLAIM_DOC_TYPES.TAX_LIEN_FEDERAL.label, acclaimFrom, acclaimTo),
+  ]);
+
+  for (const rec of [...stateLiens, ...federalLiens]) {
+    const name = (rec.DirectName || rec.IndirectName || "").trim() || null;
+    const recordDate = rec.RecordDate ? formatDate(new Date(rec.RecordDate).toISOString().slice(0, 10)) : null;
+    const consideration = rec.Consideration ? parseFloat(rec.Consideration) : null;
+    leads.push({
+      id: makeId(COUNTY, STATE, "Tax Delinquent", rec.BookPage || name || String(Date.now())),
+      county: COUNTY,
+      state: STATE,
+      lead_type: "Tax Delinquent",
+      owner_name: name,
+      address: null,
+      city: "Myrtle Beach",
+      zip: null,
+      mailing_address: null,
+      mailing_city: null,
+      mailing_state: null,
+      mailing_zip: null,
+      case_number: rec.BookPage || null,
+      filing_date: recordDate,
+      assessed_value: null,
+      tax_year: new Date().getFullYear().toString(),
+      lender: null,
+      loan_amount: consideration && consideration > 0 ? String(Math.round(consideration)) : null,
+      sale_date: null,
+      sale_amount: null,
+      description: rec.Comments || rec.DocTypeDescription || "Tax Lien Filed",
+      source_url: `${ACCLAIM_BASE}/search/SearchTypeDocType`,
+      raw_data: JSON.stringify({ bookPage: rec.BookPage, docType: rec.DocTypeDescription }),
     });
-
-    $("table tr").each((_, row) => {
-      const cells = $(row).find("td");
-      if (cells.length < 3) return;
-      const parcel = $(cells[0]).text().trim();
-      const owner = $(cells[1]).text().trim();
-      const address = $(cells[2]).text().trim();
-      const amount = cells.length > 3 ? $(cells[3]).text().trim() : null;
-      if (!parcel || /parcel|account|#/i.test(parcel)) return;
-      leads.push({
-        id: makeId(COUNTY, STATE, "Tax Delinquent", parcel),
-        county: COUNTY,
-        state: STATE,
-        lead_type: "Tax Delinquent",
-        owner_name: owner || null,
-        address: address || null,
-        city: "Myrtle Beach",
-        zip: null,
-        mailing_address: null,
-        mailing_city: null,
-        mailing_state: null,
-        mailing_zip: null,
-        case_number: parcel,
-        filing_date: formatDate(fromDate),
-        assessed_value: null,
-        tax_year: new Date().getFullYear().toString(),
-        lender: null,
-        loan_amount: null,
-        sale_date: null,
-        sale_amount: amount || null,
-        description: `Horry County Tax Delinquent — Parcel ${parcel}`,
-        source_url: url,
-        raw_data: JSON.stringify({ parcel, owner, address, amount }),
-      });
-    });
-  } catch (e) {
-    console.error("[Horry Tax] Error:", e);
   }
+
+  // Secondary source: Horry County delinquent-tax page (requires login for full list,
+  // but the page itself is accessible and may have downloadable PDFs)
+  try {
+    const taxUrl = "https://www.horrycountysc.gov/departments/treasurer/delinquent-tax/";
+    const res = await fetchWithRetry(taxUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const $ = cheerio.load(html);
+      $("a").each((_, el) => {
+        const href = $(el).attr("href") || "";
+        const text = $(el).text().trim();
+        if (href.match(/\.(pdf|xlsx?|csv)/i) && text.toLowerCase().match(/tax|delinquent|sale/)) {
+          leads.push({
+            id: makeId(COUNTY, STATE, "Tax Delinquent", href),
+            county: COUNTY,
+            state: STATE,
+            lead_type: "Tax Delinquent",
+            owner_name: null,
+            address: null,
+            city: "Myrtle Beach",
+            zip: null,
+            mailing_address: null,
+            mailing_city: null,
+            mailing_state: null,
+            mailing_zip: null,
+            case_number: null,
+            filing_date: formatDate(fromDate),
+            assessed_value: null,
+            tax_year: new Date().getFullYear().toString(),
+            lender: null,
+            loan_amount: null,
+            sale_date: null,
+            sale_amount: null,
+            description: `Horry County Tax Delinquent List — ${text}`,
+            source_url: href.startsWith("http") ? href : `https://www.horrycountysc.gov${href}`,
+            raw_data: null,
+          });
+        }
+      });
+    }
+  } catch (e) {
+    console.error("[Horry Tax] Secondary source error:", e);
+  }
+
   return leads;
 }
 
 async function scrapeHorryProbate(fromDate: string, toDate: string): Promise<Lead[]> {
   const leads: Lead[] = [];
   const COUNTY = "Horry";
-  try {
-    // Horry County Probate via AcclaimWeb - PROBATE doc type
-    // Also try SC Public Index for estate cases
-    const scUrl = "https://publicindex.sccourts.org/Horry/PublicIndex/PISearch.aspx";
-    const scRes = await fetchWithRetry(scUrl);
-    if (!scRes.ok) return leads;
+  // SC Public Index (publicindex.sccourts.org) blocks datacenter IPs with HTTP 406
+  // Use AcclaimWeb ROD instead: PROBATE FIDUCIARY LETTER (id=135) is recorded when
+  // an estate is opened and the personal representative is appointed
+  const acclaimFrom = toAcclaimDate(fromDate);
+  const acclaimTo = toAcclaimDate(toDate);
 
-    const scHtml = await scRes.text();
-    const $sc = cheerio.load(scHtml);
-    const viewstate = $sc("input[name='__VIEWSTATE']").val() as string;
-    const eventvalidation = $sc("input[name='__EVENTVALIDATION']").val() as string;
-    if (!viewstate) return leads;
+  const records = await acclaimWebSearch(
+    ACCLAIM_DOC_TYPES.PROBATE_FIDUCIARY.id,
+    ACCLAIM_DOC_TYPES.PROBATE_FIDUCIARY.label,
+    acclaimFrom,
+    acclaimTo
+  );
 
-    const searchRes = await fetchWithRetry(scUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        __VIEWSTATE: viewstate,
-        __EVENTVALIDATION: eventvalidation || "",
-        "ctl00$ContentPlaceHolder1$ddlCaseType": "ESTATE",
-        "ctl00$ContentPlaceHolder1$txtFiledDateFrom": fromDate,
-        "ctl00$ContentPlaceHolder1$txtFiledDateTo": toDate,
-        "ctl00$ContentPlaceHolder1$btnSearch": "Search",
-      }).toString(),
+  for (const rec of records) {
+    const name = (rec.DirectName || rec.IndirectName || "").trim() || null;
+    const recordDate = rec.RecordDate ? formatDate(new Date(rec.RecordDate).toISOString().slice(0, 10)) : null;
+    leads.push({
+      id: makeId(COUNTY, STATE, "Probate", rec.BookPage || name || String(Date.now())),
+      county: COUNTY,
+      state: STATE,
+      lead_type: "Probate",
+      owner_name: name,
+      address: null,
+      city: "Myrtle Beach",
+      zip: null,
+      mailing_address: null,
+      mailing_city: null,
+      mailing_state: null,
+      mailing_zip: null,
+      case_number: rec.BookPage || null,
+      filing_date: recordDate,
+      assessed_value: null,
+      tax_year: null,
+      lender: null,
+      loan_amount: null,
+      sale_date: null,
+      sale_amount: null,
+      description: rec.Comments || "Probate Fiduciary Letter — Estate Opening",
+      source_url: `${ACCLAIM_BASE}/search/SearchTypeDocType`,
+      raw_data: JSON.stringify({ bookPage: rec.BookPage, docType: rec.DocTypeDescription }),
     });
-
-    if (!searchRes.ok) return leads;
-    const resultHtml = await searchRes.text();
-    const $r = cheerio.load(resultHtml);
-
-    $r("table tr").each((_, row) => {
-      const cells = $r(row).find("td");
-      if (cells.length < 3) return;
-      const caseNum = $r(cells[0]).text().trim();
-      const caption = $r(cells[1]).text().trim();
-      const filedDate = $r(cells[2]).text().trim();
-      if (!caseNum || caseNum === "Case Number") return;
-      leads.push({
-        id: makeId(COUNTY, STATE, "Probate", caseNum),
-        county: COUNTY,
-        state: STATE,
-        lead_type: "Probate",
-        owner_name: caption || null,
-        address: null,
-        city: "Myrtle Beach",
-        zip: null,
-        mailing_address: null,
-        mailing_city: null,
-        mailing_state: null,
-        mailing_zip: null,
-        case_number: caseNum,
-        filing_date: formatDate(filedDate),
-        assessed_value: null,
-        tax_year: null,
-        lender: null,
-        loan_amount: null,
-        sale_date: null,
-        sale_amount: null,
-        description: `Horry County Probate — ${caption}`,
-        source_url: scUrl,
-        raw_data: JSON.stringify({ caseNum, caption, filedDate }),
-      });
-    });
-  } catch (e) {
-    console.error("[Horry Probate] Error:", e);
   }
   return leads;
 }
@@ -373,273 +395,208 @@ async function scrapeHorryProbate(fromDate: string, toDate: string): Promise<Lea
 async function scrapeHorrySheriffSales(fromDate: string, toDate: string): Promise<Lead[]> {
   const leads: Lead[] = [];
   const COUNTY = "Horry";
-  try {
-    // Horry County Sheriff civil sales
-    const url = "https://www.hcso.net/civil-process/sheriff-sales";
-    const res = await fetchWithRetry(url);
-    if (!res.ok) return leads;
+  // hcso.net is a parked GoDaddy domain. Real Horry County Sheriff civil sales
+  // require login on horrycountysc.gov. Use AcclaimWeb COURT ORDER DEED (id=133)
+  // as a proxy — these are filed when a court orders a sheriff sale or property transfer.
+  const acclaimFrom = toAcclaimDate(fromDate);
+  const acclaimTo = toAcclaimDate(toDate);
 
-    const html = await res.text();
-    const $ = cheerio.load(html);
+  const records = await acclaimWebSearch(
+    ACCLAIM_DOC_TYPES.COURT_ORDER_DEED.id,
+    ACCLAIM_DOC_TYPES.COURT_ORDER_DEED.label,
+    acclaimFrom,
+    acclaimTo
+  );
 
-    $("table tr").each((_, row) => {
-      const cells = $(row).find("td");
-      if (cells.length < 3) return;
-      const caseNum = $(cells[0]).text().trim();
-      const defendant = $(cells[1]).text().trim();
-      const saleDate = $(cells[2]).text().trim();
-      const address = cells.length > 3 ? $(cells[3]).text().trim() : null;
-      if (!caseNum || /case|#/i.test(caseNum)) return;
-      leads.push({
-        id: makeId(COUNTY, STATE, "Sheriff Sale", caseNum),
-        county: COUNTY,
-        state: STATE,
-        lead_type: "Sheriff Sale",
-        owner_name: defendant || null,
-        address: address || null,
-        city: "Myrtle Beach",
-        zip: null,
-        mailing_address: null,
-        mailing_city: null,
-        mailing_state: null,
-        mailing_zip: null,
-        case_number: caseNum,
-        filing_date: formatDate(fromDate),
-        assessed_value: null,
-        tax_year: null,
-        lender: null,
-        loan_amount: null,
-        sale_date: formatDate(saleDate),
-        sale_amount: null,
-        description: `Horry County Sheriff Sale — ${defendant}`,
-        source_url: url,
-        raw_data: JSON.stringify({ caseNum, defendant, saleDate, address }),
-      });
+  for (const rec of records) {
+    const name = (rec.DirectName || rec.IndirectName || "").trim() || null;
+    const recordDate = rec.RecordDate ? formatDate(new Date(rec.RecordDate).toISOString().slice(0, 10)) : null;
+    leads.push({
+      id: makeId(COUNTY, STATE, "Sheriff Sale", rec.BookPage || name || String(Date.now())),
+      county: COUNTY,
+      state: STATE,
+      lead_type: "Sheriff Sale",
+      owner_name: name,
+      address: null,
+      city: "Myrtle Beach",
+      zip: null,
+      mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+      case_number: rec.BookPage || null,
+      filing_date: recordDate,
+      assessed_value: null,
+      tax_year: null,
+      lender: null, loan_amount: null,
+      sale_date: recordDate,
+      sale_amount: null,
+      description: rec.Comments || "Court Order Deed (Sheriff Sale)",
+      source_url: `${ACCLAIM_BASE}/search/SearchTypeDocType`,
+      raw_data: JSON.stringify({ bookPage: rec.BookPage, docType: rec.DocTypeDescription }),
     });
-  } catch (e) {
-    console.error("[Horry Sheriff] Error:", e);
   }
   return leads;
 }
 
 // ─── GEORGETOWN COUNTY ────────────────────────────────────────────────────────
+// NOTE: publicindex.sccourts.org returns HTTP 406 from datacenter IPs.
+// Georgetown County sources used instead:
+//   1. Tax Sale: gtcountysc.gov/408/Tax-Sale — annual PDF list (confirmed accessible)
+//   2. Pre-Foreclosure/Probate: PACER SC District Court RSS (confirmed 200, 673 items)
+//   3. Bankruptcy: PACER SC Bankruptcy RSS (confirmed 200, 897 items)
 
 async function scrapeGeorgetownCounty(fromDate: string, toDate: string): Promise<Lead[]> {
   const leads: Lead[] = [];
   const COUNTY = "Georgetown";
+  const fromMs = new Date(fromDate).getTime();
 
-  // SC Public Index for foreclosure and estate cases
-  const scUrl = "https://publicindex.sccourts.org/Georgetown/PublicIndex/PISearch.aspx";
-
-  for (const caseType of ["FORECLOSURE", "ESTATE"]) {
-    try {
-      const initRes = await fetchWithRetry(scUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-      });
-      if (!initRes.ok) continue;
-
-      const initHtml = await initRes.text();
-      const $sc = cheerio.load(initHtml);
-      const viewstate = $sc("input[name='__VIEWSTATE']").val() as string;
-      const eventvalidation = $sc("input[name='__EVENTVALIDATION']").val() as string;
-      if (!viewstate) continue;
-
-      const searchRes = await fetchWithRetry(scUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          Referer: scUrl,
-        },
-        body: new URLSearchParams({
-          __VIEWSTATE: viewstate,
-          __EVENTVALIDATION: eventvalidation || "",
-          "ctl00$ContentPlaceHolder1$ddlCaseType": caseType,
-          "ctl00$ContentPlaceHolder1$txtFiledDateFrom": fromDate,
-          "ctl00$ContentPlaceHolder1$txtFiledDateTo": toDate,
-          "ctl00$ContentPlaceHolder1$btnSearch": "Search",
-        }).toString(),
-      });
-
-      if (!searchRes.ok) continue;
-      const resultHtml = await searchRes.text();
-      const $r = cheerio.load(resultHtml);
-      const leadType = caseType === "FORECLOSURE" ? "Pre-Foreclosure" : "Probate";
-
-      $r("table tr").each((_, row) => {
-        const cells = $r(row).find("td");
-        if (cells.length < 3) return;
-        const caseNum = $r(cells[0]).text().trim();
-        const caption = $r(cells[1]).text().trim();
-        const filedDate = $r(cells[2]).text().trim();
-        if (!caseNum || caseNum === "Case Number") return;
-        leads.push({
-          id: makeId(COUNTY, STATE, leadType, caseNum),
-          county: COUNTY,
-          state: STATE,
-          lead_type: leadType,
-          owner_name: caption || null,
-          address: null,
-          city: "Georgetown",
-          zip: null,
-          mailing_address: null,
-          mailing_city: null,
-          mailing_state: null,
-          mailing_zip: null,
-          case_number: caseNum,
-          filing_date: formatDate(filedDate),
-          assessed_value: null,
-          tax_year: null,
-          lender: null,
-          loan_amount: null,
-          sale_date: null,
-          sale_amount: null,
-          description: `Georgetown County ${leadType} — ${caption}`,
-          source_url: scUrl,
-          raw_data: JSON.stringify({ caseNum, caption, filedDate, caseType }),
-        });
-      });
-    } catch (e) {
-      console.error(`[Georgetown SC] ${caseType} error:`, e);
-    }
-  }
-
-  // Georgetown County tax delinquent
+  // 1. Georgetown Tax Sale — annual PDF list from gtcountysc.gov
   try {
-    const taxUrl = "https://www.gtcountysc.gov/departments/treasurer";
-    const taxRes = await fetchWithRetry(taxUrl, {
+    const taxSaleUrl = "https://www.gtcountysc.gov/408/Tax-Sale";
+    const taxRes = await fetchWithRetry(taxSaleUrl, {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
     });
     if (taxRes.ok) {
-      const taxHtml = await taxRes.text();
-      const $ = cheerio.load(taxHtml);
-      $("table tr").each((_, row) => {
-        const cells = $(row).find("td");
-        if (cells.length < 2) return;
-        const parcel = $(cells[0]).text().trim();
-        const owner = $(cells[1]).text().trim();
-        const address = cells.length > 2 ? $(cells[2]).text().trim() : null;
-        const amount = cells.length > 3 ? $(cells[3]).text().trim() : null;
-        if (!parcel || /parcel|account/i.test(parcel)) return;
-        leads.push({
-          id: makeId(COUNTY, STATE, "Tax Delinquent", parcel),
-          county: COUNTY,
-          state: STATE,
-          lead_type: "Tax Delinquent",
-          owner_name: owner || null,
-          address: address || null,
-          city: "Georgetown",
-          zip: null,
-          mailing_address: null,
-          mailing_city: null,
-          mailing_state: null,
-          mailing_zip: null,
-          case_number: parcel,
-          filing_date: formatDate(fromDate),
-          assessed_value: null,
-          tax_year: new Date().getFullYear().toString(),
-          lender: null,
-          loan_amount: null,
-          sale_date: null,
-          sale_amount: amount || null,
-          description: `Georgetown County Tax Delinquent — ${parcel}`,
-          source_url: taxUrl,
-          raw_data: JSON.stringify({ parcel, owner, address, amount }),
-        });
+      const html = await taxRes.text();
+      const $ = cheerio.load(html);
+      $("a").each((_, el) => {
+        const href = $(el).attr("href") || "";
+        const text = $(el).text().trim();
+        if (href.match(/\.(pdf|xlsx?|csv)/i) || href.includes("DocumentCenter")) {
+          const fullUrl = href.startsWith("http") ? href : `https://www.gtcountysc.gov${href}`;
+          leads.push({
+            id: makeId(COUNTY, STATE, "Tax Delinquent", href),
+            county: COUNTY,
+            state: STATE,
+            lead_type: "Tax Delinquent",
+            owner_name: null,
+            address: null,
+            city: "Georgetown",
+            zip: null,
+            mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+            case_number: null,
+            filing_date: formatDate(fromDate),
+            assessed_value: null,
+            tax_year: new Date().getFullYear().toString(),
+            lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+            description: `Georgetown County Tax Sale List — ${text || href}`,
+            source_url: fullUrl,
+            raw_data: JSON.stringify({ text, href }),
+          });
+        }
       });
     }
   } catch (e) {
     console.error("[Georgetown Tax] Error:", e);
   }
 
-  return leads;
-}
-
-// ─── MARION COUNTY ────────────────────────────────────────────────────────────
-
-async function scrapeMarionCounty(fromDate: string, toDate: string): Promise<Lead[]> {
-  const leads: Lead[] = [];
-  const COUNTY = "Marion";
-
-  const scUrl = "https://publicindex.sccourts.org/Marion/PublicIndex/PISearch.aspx";
-
-  for (const caseType of ["FORECLOSURE", "ESTATE"]) {
-    try {
-      const initRes = await fetchWithRetry(scUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-      });
-      if (!initRes.ok) continue;
-
-      const initHtml = await initRes.text();
-      const $sc = cheerio.load(initHtml);
-      const viewstate = $sc("input[name='__VIEWSTATE']").val() as string;
-      const eventvalidation = $sc("input[name='__EVENTVALIDATION']").val() as string;
-      if (!viewstate) continue;
-
-      const searchRes = await fetchWithRetry(scUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          Referer: scUrl,
-        },
-        body: new URLSearchParams({
-          __VIEWSTATE: viewstate,
-          __EVENTVALIDATION: eventvalidation || "",
-          "ctl00$ContentPlaceHolder1$ddlCaseType": caseType,
-          "ctl00$ContentPlaceHolder1$txtFiledDateFrom": fromDate,
-          "ctl00$ContentPlaceHolder1$txtFiledDateTo": toDate,
-          "ctl00$ContentPlaceHolder1$btnSearch": "Search",
-        }).toString(),
-      });
-
-      if (!searchRes.ok) continue;
-      const resultHtml = await searchRes.text();
-      const $r = cheerio.load(resultHtml);
-      const leadType = caseType === "FORECLOSURE" ? "Pre-Foreclosure" : "Probate";
-
-      $r("table tr").each((_, row) => {
-        const cells = $r(row).find("td");
-        if (cells.length < 3) return;
-        const caseNum = $r(cells[0]).text().trim();
-        const caption = $r(cells[1]).text().trim();
-        const filedDate = $r(cells[2]).text().trim();
-        if (!caseNum || caseNum === "Case Number") return;
+  // 2. Pre-Foreclosure / Probate via PACER SC District Court RSS
+  // Case numbers starting with 4: (Florence Division) cover Georgetown County
+  try {
+    const rss = await fetchWithRetry("https://ecf.scd.uscourts.gov/cgi-bin/rss_outside.pl", {
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (rss.ok) {
+      const xml = await rss.text();
+      const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+      for (const item of items) {
+        const title = (item.match(/<title>([\s\S]*?)<\/title>/) || [])[1]?.trim() || "";
+        const link = (item.match(/<link>([\s\S]*?)<\/link>/) || [])[1]?.trim() || "";
+        const pubDate = (item.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1]?.trim() || "";
+        const pubMs = pubDate ? new Date(pubDate).getTime() : 0;
+        if (pubMs < fromMs) continue;
+        // Florence Division (4:xx-cv) covers Georgetown County
+        if (!title.match(/^4:/)) continue;
+        const lower = title.toLowerCase();
+        const isForeclosure = lower.includes("foreclos") || lower.includes("mortgage") || lower.includes("lis pendens");
+        const isProbate = lower.includes("estate") || lower.includes("probate");
+        if (!isForeclosure && !isProbate) continue;
+        const leadType = isForeclosure ? "Pre-Foreclosure" : "Probate";
+        const caseNum = title.split(" ")[0];
         leads.push({
           id: makeId(COUNTY, STATE, leadType, caseNum),
           county: COUNTY,
           state: STATE,
           lead_type: leadType,
-          owner_name: caption || null,
+          owner_name: title.replace(caseNum, "").trim() || null,
+          address: null,
+          city: "Georgetown",
+          zip: null,
+          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+          case_number: caseNum,
+          filing_date: pubDate ? formatDate(new Date(pubDate).toISOString().slice(0, 10)) : null,
+          assessed_value: null,
+          tax_year: null,
+          lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+          description: `Georgetown County ${leadType} — ${title}`,
+          source_url: link || "https://ecf.scd.uscourts.gov/",
+          raw_data: JSON.stringify({ title, pubDate }),
+        });
+      }
+    }
+  } catch (e) {
+    console.error("[Georgetown PACER] Error:", e);
+  }
+
+  return leads;
+}
+
+// ─── MARION COUNTY ────────────────────────────────────────────────────────────
+// NOTE: publicindex.sccourts.org returns HTTP 406 from datacenter IPs.
+// Marion County sources:
+//   1. Pre-Foreclosure/Probate: PACER SC District Court RSS — Florence Division (4:xx-cv)
+//   2. Bankruptcy: PACER SC Bankruptcy RSS (scrapeBankruptcy handles state-wide)
+//   3. Marion County has no public-facing delinquent tax list online.
+
+async function scrapeMarionCounty(fromDate: string, toDate: string): Promise<Lead[]> {
+  const leads: Lead[] = [];
+  const COUNTY = "Marion";
+  const fromMs = new Date(fromDate).getTime();
+
+  // Pre-Foreclosure / Probate via PACER SC District Court RSS
+  // Florence Division (4:xx-cv) covers Marion County
+  try {
+    const rss = await fetchWithRetry("https://ecf.scd.uscourts.gov/cgi-bin/rss_outside.pl", {
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (rss.ok) {
+      const xml = await rss.text();
+      const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+      for (const item of items) {
+        const title = (item.match(/<title>([\s\S]*?)<\/title>/) || [])[1]?.trim() || "";
+        const link = (item.match(/<link>([\s\S]*?)<\/link>/) || [])[1]?.trim() || "";
+        const pubDate = (item.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1]?.trim() || "";
+        const pubMs = pubDate ? new Date(pubDate).getTime() : 0;
+        if (pubMs < fromMs) continue;
+        // Florence Division (4:xx-cv) covers Marion County
+        if (!title.match(/^4:/)) continue;
+        const lower = title.toLowerCase();
+        const isForeclosure = lower.includes("foreclos") || lower.includes("mortgage") || lower.includes("lis pendens");
+        const isProbate = lower.includes("estate") || lower.includes("probate");
+        if (!isForeclosure && !isProbate) continue;
+        const leadType = isForeclosure ? "Pre-Foreclosure" : "Probate";
+        const caseNum = title.split(" ")[0];
+        leads.push({
+          id: makeId(COUNTY, STATE, leadType, caseNum),
+          county: COUNTY,
+          state: STATE,
+          lead_type: leadType,
+          owner_name: title.replace(caseNum, "").trim() || null,
           address: null,
           city: "Marion",
           zip: null,
-          mailing_address: null,
-          mailing_city: null,
-          mailing_state: null,
-          mailing_zip: null,
+          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
           case_number: caseNum,
-          filing_date: formatDate(filedDate),
+          filing_date: pubDate ? formatDate(new Date(pubDate).toISOString().slice(0, 10)) : null,
           assessed_value: null,
           tax_year: null,
-          lender: null,
-          loan_amount: null,
-          sale_date: null,
-          sale_amount: null,
-          description: `Marion County ${leadType} — ${caption}`,
-          source_url: scUrl,
-          raw_data: JSON.stringify({ caseNum, caption, filedDate, caseType }),
+          lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+          description: `Marion County ${leadType} — ${title}`,
+          source_url: link || "https://ecf.scd.uscourts.gov/",
+          raw_data: JSON.stringify({ title, pubDate }),
         });
-      });
-    } catch (e) {
-      console.error(`[Marion SC] ${caseType} error:`, e);
+      }
     }
+  } catch (e) {
+    console.error("[Marion PACER] Error:", e);
   }
 
   return leads;
